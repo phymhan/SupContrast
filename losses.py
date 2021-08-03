@@ -59,7 +59,7 @@ class SupConLoss(nn.Module):
         contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
 
         # If negative features provided separately, add to contrast feature
-        if neg_features:
+        if neg_features is not None:
             contrast_feature = torch.cat([contrast_feature, neg_features], dim=0)
 
         if self.contrast_mode == 'one':
@@ -79,7 +79,7 @@ class SupConLoss(nn.Module):
         logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
         logits = anchor_dot_contrast - logits_max.detach()
 
-        if neg_features:
+        if neg_features is not None:
             logits, neg_logits = torch.split(logits, [anchor_feature.shape[0], neg_features.shape[0]])
         # tile mask
         mask = mask.repeat(anchor_count, contrast_count)
@@ -94,7 +94,7 @@ class SupConLoss(nn.Module):
         mask = mask * logits_mask
 
         # compute log_prob
-        if neg_features:
+        if neg_features is not None:
             # use separate negatives provided
             exp_logits = torch.exp(neg_logits)
             
