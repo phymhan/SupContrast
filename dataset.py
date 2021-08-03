@@ -23,11 +23,11 @@ class ClassDataset(Dataset):
         else:
             raise ValueError(dataset)
 
-        self.targets = self.data.targets
+        self.targets = np.array(self.data.targets)
 
         all_labels = np.unique(self.targets)
 
-        self.label_to_idxs = {int(i): torch.where(self.targets==i)[0] for i in all_labels}
+        self.label_to_idxs = {int(i): np.where(self.targets==i)[0] for i in all_labels}
 
     def __len__(self):
         return len(self.data)
