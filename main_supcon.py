@@ -221,7 +221,7 @@ def get_top5(opt):
             preds_top5 = torch.topk(outputs, 5)[1]
             
             for i in range(len(preds_top5)):
-                top5_nogt = labels[i][labels[i]!=preds_top5[i]]
+                top5_nogt = preds_top5[i][labels[i]!=preds_top5[i]]
                 top5_dict[int(idxs[i])] = top5_nogt
 
     return top5_dict
