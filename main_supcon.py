@@ -291,6 +291,8 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
         top5 = torch.unique(top5)
         # Sampling (batch_size - 1) number of negative samples
         neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=idxs.shape[0]-1)
+        if torch.cuda.is_available():
+            neg_images = neg_images.cuda(non_blocking=True)
         neg_features = model(neg_images)
 
         if opt.method == 'SupCon':
