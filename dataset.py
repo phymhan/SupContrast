@@ -41,7 +41,7 @@ class ClassDataset(Dataset):
         # Sample images from respective classes
         for i in range(len(parts)):
             idxs = np.random.choice(self.label_to_idxs[int(labels[i])], parts[i])
-            x.append([torch.stack(self.data[idx], dim=0) for idx in idxs])
+            x.append([torch.stack(self.data[idx][0], dim=0) for idx in idxs])
         
         return torch.cat(x, dim=0)
 
