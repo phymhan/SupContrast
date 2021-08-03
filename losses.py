@@ -58,10 +58,6 @@ class SupConLoss(nn.Module):
         contrast_count = features.shape[1]
         contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
 
-        # If negative features provided separately, add to contrast feature
-        if neg_features is not None:
-            contrast_feature = torch.cat([contrast_feature, neg_features], dim=0)
-
         if self.contrast_mode == 'one':
             anchor_feature = features[:, 0]
             anchor_count = 1
@@ -70,6 +66,10 @@ class SupConLoss(nn.Module):
             anchor_count = contrast_count
         else:
             raise ValueError('Unknown mode: {}'.format(self.contrast_mode))
+
+        # If negative features provided separately, add to contrast feature
+        if neg_features is not None:
+            contrast_feature = torch.cat([contrast_feature, neg_features], dim=0)
 
         # compute logits
         anchor_dot_contrast = torch.div(
