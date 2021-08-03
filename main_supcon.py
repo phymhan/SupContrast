@@ -187,6 +187,7 @@ def get_top5(opt):
     # Load and return if top5_dict exists
     file_path = os.path.join(opt.save_folder, opt.dataset + '_top5.pkl')
     if os.path.isfile(file_path):
+        print('Loading top5 dict')
         with open(file_path, 'rb') as f:
             return pickle.load(f)
 
