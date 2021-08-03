@@ -25,9 +25,9 @@ class ClassDataset(Dataset):
 
         self.targets = self.data.targets
 
-        all_labels = torch.unique(self.targets)
+        all_labels = np.unique(self.targets)
 
-        self.label_to_idxs = {int(i): torch.where(self.targets==i) for i in all_labels}
+        self.label_to_idxs = {int(i): torch.where(self.targets==i)[0] for i in all_labels}
 
     def __len__(self):
         return len(self.data)
