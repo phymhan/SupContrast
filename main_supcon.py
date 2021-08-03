@@ -10,12 +10,14 @@ import tensorboard_logger as tb_logger
 import torch
 import torch.backends.cudnn as cudnn
 from torchvision import transforms, datasets
+from tqdm import tqdm
 
 from util import TwoCropTransform, AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate
 from util import set_optimizer, save_model
 from networks.resnet_big import SupConResNet
 from losses import SupConLoss
+from dataset import ClassDataset, IdxDataset
 
 try:
     import apex
@@ -154,26 +156,76 @@ def set_loader(opt):
         normalize,
     ])
 
-    if opt.dataset == 'cifar10':
-        train_dataset = datasets.CIFAR10(root=opt.data_folder,
-                                         transform=TwoCropTransform(train_transform),
-                                         download=True)
-    elif opt.dataset == 'cifar100':
-        train_dataset = datasets.CIFAR100(root=opt.data_folder,
-                                          transform=TwoCropTransform(train_transform),
-                                          download=True)
-    elif opt.dataset == 'path':
-        train_dataset = datasets.ImageFolder(root=opt.data_folder,
-                                            transform=TwoCropTransform(train_transform))
-    else:
-        raise ValueError(opt.dataset)
+    train_dataset = IdxDataset(opt.dataset, root=opt.data_folder,
+                               transform=TwoCropTransform(train_transform))
+    # if opt.dataset == 'cifar10':
+    #     train_dataset = datasets.CIFAR10(root=opt.data_folder,
+    #                                      transform=TwoCropTransform(train_transform),
+    #                                      download=True)
+    # elif opt.dataset == 'cifar100':
+    #     train_dataset = datasets.CIFAR100(root=opt.data_folder,
+    #                                       transform=TwoCropTransform(train_transform),
+    #                                       download=True)
+    # elif opt.dataset == 'path':
+    #     train_dataset = datasets.ImageFolder(root=opt.data_folder,
+    #                                         transform=TwoCropTransform(train_transform))
+    # else:
+    #     raise ValueError(opt.dataset)
+
+    neg_dataset = ClassDataset(opt.dataset, opt.data_folder, transform=TwoCropTransform(train_transform), is_train=True)
 
     train_sampler = None
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=opt.batch_size, shuffle=(train_sampler is None),
         num_workers=opt.num_workers, pin_memory=True, sampler=train_sampler)
 
-    return train_loader
+    return train_loader, neg_dataset
+
+
+def get_top5(opt):
+    # construct data loader
+    if opt.dataset == 'cifar10':
+        mean = (0.4914, 0.4822, 0.4465)
+        std = (0.2023, 0.1994, 0.2010)
+    elif opt.dataset == 'cifar100':
+        mean = (0.5071, 0.4867, 0.4408)
+        std = (0.2675, 0.2565, 0.2761)
+    elif opt.dataset == 'path':
+        mean = eval(opt.mean)
+        std = eval(opt.std)
+    else:
+        raise ValueError('dataset not supported: {}'.format(opt.dataset))
+    normalize = transforms.Normalize(mean=mean, std=std)
+
+    train_transform = transforms.Compose([
+        transforms.ToTensor(),
+        normalize,
+    ])
+
+    train_dataset = IdxDataset(opt.dataset, opt.data_folder, transform=train_transform, train=True)
+
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=opt.batch_size, shuffle=False,
+        num_workers=opt.num_workers, pin_memory=True)
+
+    # load pre-trained model for top5 prediction
+    model = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_resnet56", pretrained=True)
+    model.eval()
+
+    top5_dict = {}
+    
+    # building a dict of index => top 5 predicted labels without the ground truth
+    with torch.no_grad():
+        for idx, (images, labels, idxs) in enumerate(tqdm(train_loader)):
+            outputs = model(images)
+            preds_top5 = torch.topk(outputs, 5)[1]
+            
+            for i in range(len(preds_top5)):
+                top5_nogt = labels[i][labels[i]!=preds_top5[i]]
+                top5_dict[int(idxs[i])] = top5_nogt
+
+    return top5_dict
+            
 
 
 def set_model(opt):
@@ -194,7 +246,7 @@ def set_model(opt):
     return model, criterion
 
 
-def train(train_loader, model, criterion, optimizer, epoch, opt):
+def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epoch, opt):
     """one epoch training"""
     model.train()
 
@@ -203,9 +255,10 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
     losses = AverageMeter()
 
     end = time.time()
-    for idx, (images, labels) in enumerate(train_loader):
+    for idx, (images, labels, idxs) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
+        
         images = torch.cat([images[0], images[1]], dim=0)
         if torch.cuda.is_available():
             images = images.cuda(non_blocking=True)
@@ -219,10 +272,21 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         features = model(images)
         f1, f2 = torch.split(features, [bsz, bsz], dim=0)
         features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+
+        # collect/fetch negative samples/labels
+        # get top 5 predictions (excluding ground truth)
+        top5 = torch.cat([top5_dict[i] for i in idxs])
+        top5 = torch.unique(top5)
+        # TODO: FIX NUM_IMGS
+        neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=3)
+        neg_features = model(neg_images)
+
         if opt.method == 'SupCon':
             loss = criterion(features, labels)
         elif opt.method == 'SimCLR':
             loss = criterion(features)
+        elif opt.method == 'SupConNegBoost':
+            loss = criterion(features, neg_features)
         else:
             raise ValueError('contrastive method not supported: {}'.
                              format(opt.method))
@@ -255,8 +319,8 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
 def main():
     opt = parse_option()
 
-    # build data loader
-    train_loader = set_loader(opt)
+    # build data loader & negative dataset
+    train_loader, neg_dataset = set_loader(opt)
 
     # build model and criterion
     model, criterion = set_model(opt)
@@ -267,13 +331,16 @@ def main():
     # tensorboard
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
 
+    # build top5 
+    top5_dict = get_top5(opt)
+
     # training routine
     for epoch in range(1, opt.epochs + 1):
         adjust_learning_rate(opt, optimizer, epoch)
 
         # train for one epoch
         time1 = time.time()
-        loss = train(train_loader, model, criterion, optimizer, epoch, opt)
+        loss = train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epoch, opt)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
