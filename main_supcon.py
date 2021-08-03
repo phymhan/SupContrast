@@ -5,6 +5,7 @@ import sys
 import argparse
 import time
 import math
+import pickle
 
 import tensorboard_logger as tb_logger
 import torch
@@ -183,6 +184,12 @@ def set_loader(opt):
 
 
 def get_top5(opt):
+    # Load and return if top5_dict exists
+    file_path = os.path.join(opt.save_folder, opt.dataset + '_top5.pkl')
+    if os.path.isfile(file_path):
+        with open(file_path, 'rb') as f:
+            return pickle.load(f)
+
     # construct data loader
     if opt.dataset == 'cifar10':
         mean = (0.4914, 0.4822, 0.4465)
@@ -223,6 +230,11 @@ def get_top5(opt):
             for i in range(len(preds_top5)):
                 top5_nogt = preds_top5[i][labels[i]!=preds_top5[i]]
                 top5_dict[int(idxs[i])] = top5_nogt
+
+
+    # save
+    with open(file_path, 'wb') as f:
+        pickle.dump(top5_dict, f, pickle.HIGHEST_PROTOCOL)
 
     return top5_dict
             
