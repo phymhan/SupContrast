@@ -80,7 +80,7 @@ class SupConLoss(nn.Module):
         logits = anchor_dot_contrast - logits_max.detach()
 
         if neg_features is not None:
-            logits, neg_logits = torch.split(logits, [anchor_feature.shape[0], neg_features.shape[0]])
+            logits, neg_logits = torch.split(logits, [anchor_feature.shape[0], neg_features.shape[0]], dim=-1)
         # tile mask
         mask = mask.repeat(anchor_count, contrast_count)
         # mask-out self-contrast cases # creates diagonal mask (diagonal == 0)
