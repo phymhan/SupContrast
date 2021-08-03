@@ -277,16 +277,14 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
         # get top 5 predictions (excluding ground truth)
         top5 = torch.cat([top5_dict[i] for i in idxs])
         top5 = torch.unique(top5)
-        # TODO: FIX NUM_IMGS
-        neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=3)
+        # Sampling (batch_size - 1) number of negative samples
+        neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=idxs.shape[0]-1)
         neg_features = model(neg_images)
 
         if opt.method == 'SupCon':
-            loss = criterion(features, labels)
+            loss = criterion(features, labels, neg_features=neg_features)
         elif opt.method == 'SimCLR':
             loss = criterion(features)
-        elif opt.method == 'SupConNegBoost':
-            loss = criterion(features, neg_features)
         else:
             raise ValueError('contrastive method not supported: {}'.
                              format(opt.method))
