@@ -61,6 +61,7 @@ def parse_option():
     parser.add_argument('--std', type=str, help='std of dataset in path in form of str tuple')
     parser.add_argument('--data_folder', type=str, default=None, help='path to custom dataset')
     parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop')
+    parser.add_argument('--neg_size', type=int, default=64, help='number of negative samples for each item')
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
@@ -289,8 +290,8 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
         # collect/fetch negative samples/labels
         # get top 5 predictions (excluding ground truth)
         top5 = torch.cat([top5_dict[int(i)] for i in idxs])
-        top5 = torch.unique(top5)
-        print('Unique top5 labels count:', len(top5))
+        top5 = torch.unique(top5, sorted=False)
+        # print('Unique top5 labels count:', len(top5))
         # Sampling (batch_size - 1) number of negative samples
         neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=idxs.shape[0]-1)
         if torch.cuda.is_available():
