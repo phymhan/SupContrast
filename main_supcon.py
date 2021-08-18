@@ -351,7 +351,7 @@ def main():
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
 
     # build top5 
-    top5_dict = get_top5(opt)
+    # top5_dict = get_top5(opt)
 
     # training routine
     for epoch in range(1, opt.epochs + 1):
