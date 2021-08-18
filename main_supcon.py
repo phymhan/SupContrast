@@ -61,6 +61,7 @@ def parse_option():
     parser.add_argument('--std', type=str, help='std of dataset in path in form of str tuple')
     parser.add_argument('--data_folder', type=str, default=None, help='path to custom dataset')
     parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop')
+    parser.add_argument('--neg_sample_size', type=int, default=64, help='number of negative samples to use (x2 number in total)')
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
@@ -288,11 +289,15 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
 
         # collect/fetch negative samples/labels
         # get top 5 predictions (excluding ground truth)
-        top5 = torch.cat([top5_dict[int(i)] for i in idxs])
-        top5 = torch.unique(top5)
-        print('Unique top5 labels count:', len(top5))
+
+        # top5 = torch.cat([top5_dict[int(i)] for i in idxs])
+        # top5 = torch.unique(top5)
+        # Customized for CIFAR-100
+        all_labels = torch.arange(0, 100)
+        all_labels = all_labels[torch.randperm(all_labels.shape[0])]
+
         # Sampling (batch_size - 1) number of negative samples
-        neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=idxs.shape[0]-1)
+        neg_images = neg_dataset.__getitem__(labels=all_labels, num_imgs=opt.neg_sample_size)
         if torch.cuda.is_available():
             neg_images = neg_images.cuda(non_blocking=True)
         neg_features = model(neg_images)
