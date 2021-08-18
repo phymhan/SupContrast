@@ -61,7 +61,7 @@ def parse_option():
     parser.add_argument('--std', type=str, help='std of dataset in path in form of str tuple')
     parser.add_argument('--data_folder', type=str, default=None, help='path to custom dataset')
     parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop')
-    parser.add_argument('--neg_size', type=int, default=64, help='number of negative samples for each item')
+    parser.add_argument('--neg_sample_size', type=int, default=64, help='number of negative samples for each item')
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
@@ -230,7 +230,7 @@ def get_top5(opt):
             preds_top5 = torch.topk(outputs, 5)[1]
             
             for i in range(len(preds_top5)):
-                top5_nogt = preds_top5[i][labels[i]!=preds_top5[i]]
+                top5_nogt = preds_top5[i][labels[i]!=preds_top5[i]][:4]
                 top5_dict[int(idxs[i])] = top5_nogt
 
 
@@ -290,14 +290,27 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
         # collect/fetch negative samples/labels
         # get top 5 predictions (excluding ground truth)
         top5 = torch.cat([top5_dict[int(i)] for i in idxs])
-        top5 = torch.unique(top5, sorted=False)
+        top5_len = [len(top5_dict[int(i)]) for i in idxs]
+        assert (top5_len == top5_len[0]).all()
+
+        all_labels = torch.arange(0,100)
+        all_labels = all_labels[torch.randperm(all_labels.shape[0])]
+
         # print('Unique top5 labels count:', len(top5))
         # Sampling (batch_size - 1) number of negative samples
-        neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=idxs.shape[0]-1)
-        if torch.cuda.is_available():
-            neg_images = neg_images.cuda(non_blocking=True)
-        neg_features = model(neg_images)
+        neg_images_sep = neg_dataset.__getitem__(labels=top5, num_imgs=len(top5))
+        neg_images_shared = neg_dataset.__getitem__(labels=all_labels, num_imgs=(opt.neg_sample_size-len(top5)/opt.batch_size))
 
+        if torch.cuda.is_available():
+            neg_images_sep = neg_images_sep.cuda(non_blocking=True)
+            neg_images_shared = neg_images_shared.cuda(non_blocking=True)
+
+        neg_features_sep = model(neg_images_sep)
+        neg_features_shared = model(neg_images_shared)
+
+        neg_features_sep = torch.stack(torch.split(neg_features_sep, top5_len, dim=0), dim=0)
+        neg_features = torch.cat([neg_features_sep, neg_features_shared.unsqueeze(0).repeat(neg_features_sep.shape[0])], dim=1)
+        
         if opt.method == 'SupCon':
             loss = criterion(features, neg_features=neg_features, labels=labels)
         elif opt.method == 'SimCLR':
