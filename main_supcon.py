@@ -291,7 +291,6 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
         # get top 5 predictions (excluding ground truth)
         top5 = torch.cat([top5_dict[int(i)] for i in idxs])
         top5_len = [len(top5_dict[int(i)]) for i in idxs]
-        assert top5_len == top5_len[0]
 
         all_labels = torch.arange(0,100)
         all_labels = all_labels[torch.randperm(all_labels.shape[0])]
