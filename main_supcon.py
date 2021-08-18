@@ -290,14 +290,15 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
         # collect/fetch negative samples/labels
         # get top 5 predictions (excluding ground truth)
         top5 = torch.cat([top5_dict[int(i)] for i in idxs])
-        top5_len = [len(top5_dict[int(i)]) for i in idxs]
+        top5_len = torch.Tensor([len(top5_dict[int(i)]) for i in idxs])
+        top5_unique = torch.unique(top5)
 
         all_labels = torch.arange(0,100)
         all_labels = all_labels[torch.randperm(all_labels.shape[0])]
 
         # print('Unique top5 labels count:', len(top5))
         # Sampling (batch_size - 1) number of negative samples
-        neg_images_sep = neg_dataset.__getitem__(labels=top5, num_imgs=len(top5))
+        neg_images_sep = neg_dataset.__getitem__(labels=top5_unique, num_imgs=len(top5_unique))
         neg_images_shared = neg_dataset.__getitem__(labels=all_labels, num_imgs=int(opt.neg_sample_size-len(top5)/opt.batch_size))
 
         if torch.cuda.is_available():
@@ -307,8 +308,14 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
         neg_features_sep = model(neg_images_sep)
         neg_features_shared = model(neg_images_shared)
 
-        neg_features_sep = torch.stack(torch.split(neg_features_sep, top5_len, dim=0), dim=0)
-        neg_features = torch.cat([neg_features_sep, neg_features_shared.unsqueeze(0).repeat(neg_features_sep.shape[0])], dim=1)
+        neg_features_sep_full = torch.empty(top5.shape[0], 2, neg_features_sep.shape[-1])
+        for u in top5_unique:
+            k = torch.where(top5_unique==u)[0]*2
+            neg_features_sep_full[top5 == u] = neg_images_sep[k:k+2]
+        
+        neg_features_sep_full = torch.cat(torch.unbind(neg_features_sep_full, dim=1), dim=0)
+        neg_features_sep_full = torch.stack(torch.split(neg_features_sep_full, top5_len*2, dim=0), dim=0)
+        neg_features = torch.cat([neg_features_sep_full, neg_features_shared.unsqueeze(0).repeat(neg_features_sep_full.shape[0])], dim=1)
         
         if opt.method == 'SupCon':
             loss = criterion(features, neg_features=neg_features, labels=labels)
