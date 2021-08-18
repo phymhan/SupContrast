@@ -298,7 +298,7 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
         # print('Unique top5 labels count:', len(top5))
         # Sampling (batch_size - 1) number of negative samples
         neg_images_sep = neg_dataset.__getitem__(labels=top5, num_imgs=len(top5))
-        neg_images_shared = neg_dataset.__getitem__(labels=all_labels, num_imgs=(opt.neg_sample_size-len(top5)/opt.batch_size))
+        neg_images_shared = neg_dataset.__getitem__(labels=all_labels, num_imgs=int(opt.neg_sample_size-len(top5)/opt.batch_size))
 
         if torch.cuda.is_available():
             neg_images_sep = neg_images_sep.cuda(non_blocking=True)
