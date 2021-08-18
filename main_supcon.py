@@ -290,7 +290,7 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
         # collect/fetch negative samples/labels
         # get top 5 predictions (excluding ground truth)
         top5 = torch.cat([top5_dict[int(i)] for i in idxs])
-        top5_len = torch.Tensor([len(top5_dict[int(i)]) for i in idxs])
+        top5_len = [len(top5_dict[int(i)])*2 for i in idxs]
         top5_unique = torch.unique(top5)
 
         all_labels = torch.arange(0,100)
