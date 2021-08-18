@@ -70,7 +70,7 @@ class SupConLoss(nn.Module):
         # If negative features provided separately, add to contrast feature
         if neg_features is not None:
             # contrast_feature = torch.cat([contrast_feature, neg_features], dim=0)
-            contrast_feature = torch.cat([contrast_feature.unsqueze(1), neg_features], dim=1)
+            contrast_feature = torch.cat([contrast_feature.unsqueeze(1), neg_features], dim=1)
 
         # compute logits
         anchor_dot_contrast = torch.div(
