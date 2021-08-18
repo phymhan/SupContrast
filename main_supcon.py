@@ -308,14 +308,16 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
         neg_features_sep = model(neg_images_sep)
         neg_features_shared = model(neg_images_shared)
 
+        # Filling in respective negative samples from the drawn samples from each of the unique classes above
         neg_features_sep_full = torch.empty((top5.shape[0], 2, neg_features_sep.shape[-1]), device=neg_features_sep.device)
         for u in top5_unique:
             k = torch.where(top5_unique==u)[0]*2
             neg_features_sep_full[top5 == u] = neg_features_sep[k:k+2]
         
-        neg_features_sep_full = torch.cat(torch.unbind(neg_features_sep_full, dim=1), dim=0)
+        # Flattening out second dimension into batch dimension
+        neg_features_sep_full = neg_features_sep_full.view(-1, neg_features_sep_full.shape[-1])
         neg_features_sep_full = torch.stack(torch.split(neg_features_sep_full, top5_len, dim=0), dim=0)
-        neg_features = torch.cat([neg_features_sep_full, neg_features_shared.unsqueeze(0).repeat(neg_features_sep_full.shape[0], 1, 1)], dim=1)
+        neg_features = torch.cat([neg_features_sep_full.repeat(2, 1, 1), neg_features_shared.unsqueeze(0).repeat(neg_features_sep_full.shape[0]*2, 1, 1)], dim=1)
         
         if opt.method == 'SupCon':
             loss = criterion(features, neg_features=neg_features, labels=labels)
