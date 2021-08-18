@@ -308,7 +308,7 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
         neg_features_sep = model(neg_images_sep)
         neg_features_shared = model(neg_images_shared)
 
-        neg_features_sep_full = torch.empty(top5.shape[0], 2, neg_features_sep.shape[-1])
+        neg_features_sep_full = torch.empty((top5.shape[0], 2, neg_features_sep.shape[-1]), device=neg_features_sep.device)
         for u in top5_unique:
             k = torch.where(top5_unique==u)[0]*2
             neg_features_sep_full[top5 == u] = neg_features_sep[k:k+2]
