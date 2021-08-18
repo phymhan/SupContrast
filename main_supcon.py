@@ -314,7 +314,7 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
             neg_features_sep_full[top5 == u] = neg_features_sep[k:k+2]
         
         neg_features_sep_full = torch.cat(torch.unbind(neg_features_sep_full, dim=1), dim=0)
-        neg_features_sep_full = torch.stack(torch.split(neg_features_sep_full, top5_len*2, dim=0), dim=0)
+        neg_features_sep_full = torch.stack(torch.split(neg_features_sep_full, top5_len, dim=0), dim=0)
         neg_features = torch.cat([neg_features_sep_full, neg_features_shared.unsqueeze(0).repeat(neg_features_sep_full.shape[0])], dim=1)
         
         if opt.method == 'SupCon':
