@@ -311,7 +311,7 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
         neg_features_sep_full = torch.empty(top5.shape[0], 2, neg_features_sep.shape[-1])
         for u in top5_unique:
             k = torch.where(top5_unique==u)[0]*2
-            neg_features_sep_full[top5 == u] = neg_images_sep[k:k+2]
+            neg_features_sep_full[top5 == u] = neg_features_sep[k:k+2]
         
         neg_features_sep_full = torch.cat(torch.unbind(neg_features_sep_full, dim=1), dim=0)
         neg_features_sep_full = torch.stack(torch.split(neg_features_sep_full, top5_len*2, dim=0), dim=0)
