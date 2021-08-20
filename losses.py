@@ -86,6 +86,8 @@ class SupConLoss(nn.Module):
 
         # compute log_prob
         exp_logits = torch.exp(logits) * logits_mask
+        # Subsetting half of negative samples
+        exp_logits = torch.cat([exp_logits[:batch_size, batch_size:], exp_logits[batch_size:, :batch_size]], dim=0)
         log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
 
         # compute mean of log-likelihood over positive
