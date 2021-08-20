@@ -290,7 +290,6 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
         # get top 5 predictions (excluding ground truth)
         top5 = torch.cat([top5_dict[int(i)] for i in idxs])
         top5 = torch.unique(top5)
-        print('Unique top5 labels count:', len(top5))
         # Sampling (batch_size - 1) number of negative samples
         neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=idxs.shape[0]-1)
         if torch.cuda.is_available():
