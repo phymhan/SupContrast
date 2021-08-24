@@ -110,7 +110,8 @@ class SupConLoss(nn.Module):
             # use negatives within batch
             exp_logits = torch.exp(logits) * logits_mask
         
-        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+        # Adding numerator to denominator for normalization
+        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True) + torch.exp(logits))
         
         # compute mean of log-likelihood over positive
         mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
