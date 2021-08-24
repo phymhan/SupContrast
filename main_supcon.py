@@ -314,8 +314,10 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
             k = torch.where(top5_unique==u)[0]*2
             neg_features_sep_full[top5 == u] = neg_features_sep[k:k+2]
         
+        # TODO: Fix negative samples of shared + fix the flattening so that you split first
+
         # Flattening out second dimension into batch dimension
-        neg_features_sep_full = neg_features_sep_full.view(-1, neg_features_sep_full.shape[-1])
+        neg_features_sep_full = neg_features_sep_full.view(-1, neg_features_sep_full.shape[-1]) # check this
         neg_features_sep_full = torch.stack(torch.split(neg_features_sep_full, top5_len, dim=0), dim=0)
         neg_features = torch.cat([neg_features_sep_full.repeat(2, 1, 1), neg_features_shared.unsqueeze(0).repeat(neg_features_sep_full.shape[0]*2, 1, 1)], dim=1)
         
