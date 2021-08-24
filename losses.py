@@ -51,8 +51,11 @@ class SupConLoss(nn.Module):
             if labels.shape[0] != batch_size:
                 raise ValueError('Num of labels does not match num of features')
             mask = torch.eq(labels, labels.T).float().to(device)
+            neg_mask = torch.ne(labels, labels.T).float().to(device)
         else:
             mask = mask.float().to(device)
+        
+        
 
         contrast_count = features.shape[1]
         contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
@@ -75,6 +78,7 @@ class SupConLoss(nn.Module):
 
         # tile mask
         mask = mask.repeat(anchor_count, contrast_count)
+        neg_mask = neg_mask.repeat(anchor_count, contrast_count)
         # mask-out self-contrast cases
         logits_mask = torch.scatter(
             torch.ones_like(mask),
@@ -85,8 +89,10 @@ class SupConLoss(nn.Module):
         mask = mask * logits_mask
 
         # compute log_prob
-        exp_logits = torch.exp(logits) * logits_mask
-        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+        # compute denominator with only negatives
+        exp_logits = torch.exp(logits) * neg_mask
+        # compute log_prob with only numerator included in denominator
+        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True) + torch.exp(logits))
 
         # compute mean of log-likelihood over positive
         mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
