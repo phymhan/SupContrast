@@ -12,4 +12,4 @@ class ConcatDataset(torch.utils.data.Dataset):
         # Check datasets are of equal length
         assert (all_len == all_len[0]).all()
 
-        return all_len[0]
+        return min(len(d) for d in self.datasets)
