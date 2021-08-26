@@ -230,7 +230,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
 
         # negative samples, (N - 1) * 2 in total (leaving out 1 at the end of batch for both views)
-        neg_images = torch.cat([neg_images[0][:images.shape[0]-1], neg_images[1][:images.shape[0]-1]], dim=0)
+        neg_images = torch.cat([neg_images[0][:bsz-1], neg_images[1][:bsz-1]], dim=0)
         if torch.cuda.is_available():
             neg_images = neg_images.cuda(non_blocking=True)
         neg_features = model(neg_images)
