@@ -16,6 +16,7 @@ from util import adjust_learning_rate, warmup_learning_rate
 from util import set_optimizer, save_model
 from networks.resnet_big import SupConResNet
 from losses import SupConLoss
+from datasets import ConcatDataset
 
 try:
     import apex
@@ -96,7 +97,7 @@ def parse_option():
     for it in iterations:
         opt.lr_decay_epochs.append(int(it))
 
-    opt.model_name = '{}_{}_{}_lr_{}_decay_{}_bsz_{}_temp_{}_trial_{}'.\
+    opt.model_name = '{}_{}_baseline_rand_neg_{}_lr_{}_decay_{}_bsz_{}_temp_{}_trial_{}'.\
         format(opt.method, opt.dataset, opt.model, opt.learning_rate,
                opt.weight_decay, opt.batch_size, opt.temp, opt.trial)
 
@@ -155,22 +156,30 @@ def set_loader(opt):
     ])
 
     if opt.dataset == 'cifar10':
-        train_dataset = datasets.CIFAR10(root=opt.data_folder,
+        train_dataset1 = datasets.CIFAR10(root=opt.data_folder,
+                                         transform=TwoCropTransform(train_transform),
+                                         download=True)
+        train_dataset2 = datasets.CIFAR10(root=opt.data_folder,
                                          transform=TwoCropTransform(train_transform),
                                          download=True)
     elif opt.dataset == 'cifar100':
-        train_dataset = datasets.CIFAR100(root=opt.data_folder,
+        train_dataset1 = datasets.CIFAR100(root=opt.data_folder,
+                                          transform=TwoCropTransform(train_transform),
+                                          download=True)
+        train_dataset2 = datasets.CIFAR100(root=opt.data_folder,
                                           transform=TwoCropTransform(train_transform),
                                           download=True)
     elif opt.dataset == 'path':
-        train_dataset = datasets.ImageFolder(root=opt.data_folder,
+        train_dataset1 = datasets.ImageFolder(root=opt.data_folder,
+                                            transform=TwoCropTransform(train_transform))
+        train_dataset2 = datasets.ImageFolder(root=opt.data_folder,
                                             transform=TwoCropTransform(train_transform))
     else:
         raise ValueError(opt.dataset)
 
     train_sampler = None
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=opt.batch_size, shuffle=(train_sampler is None),
+        ConcatDataset(train_dataset1, train_dataset2), batch_size=opt.batch_size, shuffle=(train_sampler is None),
         num_workers=opt.num_workers, pin_memory=True, sampler=train_sampler)
 
     return train_loader
@@ -203,7 +212,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
     losses = AverageMeter()
 
     end = time.time()
-    for idx, (images, labels) in enumerate(train_loader):
+    for idx, (images, labels, neg_images, _) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
         images = torch.cat([images[0], images[1]], dim=0)
@@ -219,8 +228,15 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         features = model(images)
         f1, f2 = torch.split(features, [bsz, bsz], dim=0)
         features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+
+        # negative samples
+        neg_images = torch.cat([neg_images[0], neg_images[1]], dim=0)
+        if torch.cuda.is_available():
+            neg_images = neg_images.cuda(non_blocking=True)
+        neg_features = model(neg_images)
+
         if opt.method == 'SupCon':
-            loss = criterion(features, labels)
+            loss = criterion(features, neg_features=neg_features, labels=labels)
         elif opt.method == 'SimCLR':
             loss = criterion(features)
         else:
