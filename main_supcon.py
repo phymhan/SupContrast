@@ -212,7 +212,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
     losses = AverageMeter()
 
     end = time.time()
-    for idx, (images, labels, neg_images, _) in enumerate(train_loader):
+    for idx, ((images, labels), (neg_images, _)) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
         images = torch.cat([images[0], images[1]], dim=0)
