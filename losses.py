@@ -93,13 +93,13 @@ class SupConLoss(nn.Module):
         # making diagonals all 0 in mask
         mask = mask * logits_mask
 
-        # mask for positive views
-        pos_mask = torch.zeros_like(mask)
-        pos_mask[batch_size:,:batch_size] = pos_mask[:batch_size,batch_size:] = torch.eye(mask.shape[0]//2)
-        pos_mask = (pos_mask > 0)
+        # # mask for positive views
+        # pos_mask = torch.zeros_like(mask)
+        # pos_mask[batch_size:,:batch_size] = pos_mask[:batch_size,batch_size:] = torch.eye(mask.shape[0]//2)
+        # pos_mask = (pos_mask > 0)
 
-        # attaching positive view to negatives
-        neg_logits = torch.cat([neg_logits, torch.masked_select(logits, pos_mask).unsqueeze(1)], dim=-1)
+        # # attaching positive view to negatives
+        # neg_logits = torch.cat([neg_logits, torch.masked_select(logits, pos_mask).unsqueeze(1)], dim=-1)
 
         # compute log_prob
         if neg_features is not None:
