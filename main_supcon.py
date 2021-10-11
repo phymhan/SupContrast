@@ -10,6 +10,7 @@ import tensorboard_logger as tb_logger
 import torch
 import torch.backends.cudnn as cudnn
 from torchvision import transforms, datasets
+import numpy as np
 
 from util import TwoCropTransform, AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate
@@ -180,10 +181,12 @@ def set_loader(opt):
     train_sampler = None
     train_loader = torch.utils.data.DataLoader(
         ConcatDataset(train_dataset1, train_dataset2), batch_size=opt.batch_size, shuffle=(train_sampler is None),
-        num_workers=opt.num_workers, pin_memory=True, sampler=train_sampler)
+        num_workers=opt.num_workers, pin_memory=True, sampler=train_sampler, worker_init_fn=worker_init_fn)
 
     return train_loader
 
+def worker_init_fn(worker_id):                                                          
+    np.random.seed(np.random.get_state()[1][0] + worker_id)
 
 def set_model(opt):
     model = SupConResNet(name=opt.model)
