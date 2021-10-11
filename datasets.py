@@ -8,6 +8,7 @@ class ConcatDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, i):
         j = np.random.randint(0, self.class_size, size=(len(self.datasets)-1))
+        j = j[0]
 
         return tuple(self.datasets[0][i], self.datasets[1][j])
         # return tuple(d[i] for d in self.datasets)
