@@ -4,10 +4,9 @@ import numpy as np
 class ConcatDataset(torch.utils.data.Dataset):
     def __init__(self, *datasets):
         self.datasets = datasets
-        self.class_size = len(np.unique(datasets[0].targets))
 
     def __getitem__(self, i):
-        j = np.random.randint(0, self.class_size, size=(len(self.datasets)-1))
+        j = np.random.randint(0, len(self.datasets[1])-1, size=1)
         j = j[0]
 
         return tuple([self.datasets[0][i], self.datasets[1][j]])
