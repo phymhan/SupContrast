@@ -29,8 +29,8 @@ if __name__ == '__main__':
 
     # ds = ConcatDataset(d1, d2)
     # dl = torch.utils.data.DataLoader(ds, batch_size=2, shuffle=True)#, worker_init_fn=worker_init_fn)
-    dl = torch.utils.data.DataLoader(d1, batch_size=2, shuffle=True)#, worker_init_fn=worker_init_fn)
-    dl_other = torch.utils.data.DataLoader(d2, batch_size=2, shuffle=True)#, worker_init_fn=worker_init_fn)
+    dl = torch.utils.data.DataLoader(d1, batch_size=2, shuffle=True, worker_init_fn=worker_init_fn)
+    dl_other = torch.utils.data.DataLoader(d2, batch_size=2, shuffle=True, worker_init_fn=worker_init_fn)
     from itertools import cycle
     dl_other_iter = iter(dl_other)
     for e in range(2):
