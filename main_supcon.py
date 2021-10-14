@@ -79,6 +79,9 @@ def parse_option():
     parser.add_argument('--trial', type=str, default='0',
                         help='id for recording multiple runs')
 
+    # distributed training
+    parser.add_argument('--dist', action='store_true', default=False,
+                        help='using distributed training')
     opt = parser.parse_args()
 
     # check if dataset is path that passed required arguments
