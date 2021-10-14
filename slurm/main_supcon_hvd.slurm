@@ -47,7 +47,7 @@ date
 
 horovodrun -np $SLURM_NTASKS  -H `cat $NODELIST` python \
       $HOME2/SupContrast/main_supcon_hvd.py \
-      --batch_size 128 \
+      --batch_size 512 \
       --learning_rate 0.5 \
       --temp 0.1 \
       --dataset imagenet \
