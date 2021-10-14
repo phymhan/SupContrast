@@ -78,7 +78,8 @@ def warmup_learning_rate(args, epoch, batch_id, total_batches, optimizer):
 
 def set_optimizer(opt, model):
     # Horovod: (optional) compression algorithm.
-    compression = hvd.Compression.fp16 if opt.fp16_allreduce else hvd.Compression.none
+    if opt.dist:
+        compression = hvd.Compression.fp16 if opt.fp16_allreduce else hvd.Compression.none
 
     optimizer = optim.SGD(model.parameters(),
                           lr=opt.learning_rate,
@@ -86,7 +87,8 @@ def set_optimizer(opt, model):
                           weight_decay=opt.weight_decay)
 
     # Horovod: wrap optimizer with DistributedOptimizer.
-    optimizer = hvd.DistributedOptimizer(
+    if opt.dist:
+        optimizer = hvd.DistributedOptimizer(
                             optimizer, named_parameters=model.named_parameters(),
                             compression=compression,
                             backward_passes_per_step=opt.batches_per_allreduce,
@@ -97,7 +99,19 @@ def set_optimizer(opt, model):
 
 
 def save_model(model, optimizer, opt, epoch, save_file):
-    if hvd.rank() == 0:
+    if opt.dist:
+        if hvd.rank() == 0:
+            print('==> Saving...')
+            state = {
+                'opt': opt,
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'epoch': epoch,
+            }
+            torch.save(state, save_file)
+            del state
+            
+    else:
         print('==> Saving...')
         state = {
             'opt': opt,
