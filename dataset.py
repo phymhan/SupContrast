@@ -16,8 +16,8 @@ class ClassDataset(Dataset):
         elif dataset == 'cifar100':
             self.data = CIFAR100(root=root,
                                  transform=transform,
-                                 download=True)
-        elif dataset == 'path':
+                                 download=True)                           
+        elif dataset == 'path' or dataset == 'imagenet':
             self.data = ImageFolder(root=root,
                                     transform=transform)
         else:
@@ -59,9 +59,7 @@ class IdxDataset(Dataset):
                                  transform=transform,
                                  train=train,
                                  download=True)
-        elif opt.dataset == 'imagenet':
-            self.data = ImageFolder(root=root, transform=TwoCropTransform(transform))
-        elif dataset == 'path':
+        elif dataset == 'imagenet' or dataset == 'path':
             self.data = ImageFolder(root=root, transform=transform)
         else:
             raise ValueError(dataset)
