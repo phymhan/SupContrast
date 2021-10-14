@@ -25,12 +25,22 @@ if __name__ == '__main__':
         np.random.seed(np.random.get_state()[1][0] + worker_id)
 
     d1 = torch.utils.data.TensorDataset(torch.from_numpy(np.arange(0,10)).float())
-    d2 = torch.utils.data.TensorDataset(torch.from_numpy(np.arange(10,20)).float())
+    d2 = torch.utils.data.TensorDataset(torch.from_numpy(np.arange(0,10)).float())
 
-    ds = ConcatDataset(d1, d2)
-    dl = torch.utils.data.DataLoader(ds, batch_size=2, shuffle=True)#, worker_init_fn=worker_init_fn)
-
+    # ds = ConcatDataset(d1, d2)
+    # dl = torch.utils.data.DataLoader(ds, batch_size=2, shuffle=True)#, worker_init_fn=worker_init_fn)
+    dl = torch.utils.data.DataLoader(d1, batch_size=2, shuffle=True)#, worker_init_fn=worker_init_fn)
+    dl_other = torch.utils.data.DataLoader(d2, batch_size=2, shuffle=True)#, worker_init_fn=worker_init_fn)
+    from itertools import cycle
+    dl_other_iter = iter(dl_other)
     for e in range(2):
         # np.random.seed(e)
         for i, x in enumerate(dl):
             print(x)
+            try:
+                y = next(dl_other_iter)
+                print(y)
+            except StopIteration:
+                dl_other_iter = iter(dl_other)
+                y = next(dl_other_iter)
+                print(y)

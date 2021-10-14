@@ -179,11 +179,15 @@ def set_loader(opt):
         raise ValueError(opt.dataset)
 
     train_sampler = None
-    train_loader = torch.utils.data.DataLoader(
-        ConcatDataset(train_dataset1, train_dataset2), batch_size=opt.batch_size, shuffle=(train_sampler is None),
+    # train_loader = torch.utils.data.DataLoader(
+    #     ConcatDataset(train_dataset1, train_dataset2), batch_size=opt.batch_size, shuffle=(train_sampler is None),
+    #     num_workers=opt.num_workers, pin_memory=True, sampler=train_sampler, worker_init_fn=worker_init_fn)
+    train_loader = torch.utils.data.DataLoader(train_dataset1, batch_size=opt.batch_size, shuffle=(train_sampler is None),
+        num_workers=opt.num_workers, pin_memory=True, sampler=train_sampler, worker_init_fn=worker_init_fn)
+    train_loader1 = torch.utils.data.DataLoader(train_dataset2, batch_size=opt.batch_size, shuffle=(train_sampler is None),
         num_workers=opt.num_workers, pin_memory=True, sampler=train_sampler, worker_init_fn=worker_init_fn)
 
-    return train_loader
+    return train_loader, train_loader1
 
 def worker_init_fn(worker_id):                                                          
     np.random.seed(np.random.get_state()[1][0] + worker_id)
@@ -206,17 +210,28 @@ def set_model(opt):
     return model, criterion
 
 
-def train(train_loader, model, criterion, optimizer, epoch, opt):
+def train(train_loaders, model, criterion, optimizer, epoch, opt):
     """one epoch training"""
     model.train()
+
+    train_loader, train_loader1 = train_loaders
+    train_loader1_itr = iter(train_loader1)
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
 
     end = time.time()
-    for idx, ((images, labels), (neg_images, _)) in enumerate(train_loader):
+    # for idx, ((images, labels), (neg_images, _)) in enumerate(train_loader):
+    for idx, (images, labels) in enumerate(train_loader):
         data_time.update(time.time() - end)
+
+        # Randomly sampling another batch to use as negatives samples
+        try:
+            neg_images, _ = next(train_loader1_itr)
+        except StopIteration:
+            train_loader1_itr = iter(train_loader1)
+            neg_images, _ = next(train_loader1_itr)
 
         images = torch.cat([images[0], images[1]], dim=0)
         if torch.cuda.is_available():
@@ -275,7 +290,7 @@ def main():
     opt = parse_option()
 
     # build data loader
-    train_loader = set_loader(opt)
+    train_loaders = set_loader(opt)
 
     # build model and criterion
     model, criterion = set_model(opt)
@@ -292,7 +307,7 @@ def main():
 
         # train for one epoch
         time1 = time.time()
-        loss = train(train_loader, model, criterion, optimizer, epoch, opt)
+        loss = train(train_loaders, model, criterion, optimizer, epoch, opt)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 

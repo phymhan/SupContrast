@@ -229,7 +229,7 @@ def set_model(opt):
         # if torch.cuda.device_count() > 1:
         #     model.encoder = torch.nn.DataParallel(model.encoder)
         # pin GPU to local rank
-        torch.cuda.set_device(hvd.loca_rank())
+        torch.cuda.set_device(hvd.local_rank())
         # Limit # of threads to be used per worker
         torch.set_num_threads(8)
         model = model.cuda()
