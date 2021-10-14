@@ -59,9 +59,10 @@ class IdxDataset(Dataset):
                                  transform=transform,
                                  train=train,
                                  download=True)
+        elif opt.dataset == 'imagenet':
+            self.data = ImageFolder(root=root, transform=TwoCropTransform(transform))
         elif dataset == 'path':
-            self.data = ImageFolder(root=root,
-                                    transform=transform)
+            self.data = ImageFolder(root=root, transform=transform)
         else:
             raise ValueError(dataset)
 

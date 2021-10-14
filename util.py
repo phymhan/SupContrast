@@ -4,6 +4,7 @@ import math
 import numpy as np
 import torch
 import torch.optim as optim
+import horovod.torch as hvd
 
 
 class TwoCropTransform:
@@ -76,20 +77,33 @@ def warmup_learning_rate(args, epoch, batch_id, total_batches, optimizer):
 
 
 def set_optimizer(opt, model):
+# Horovod: (optional) compression algorithm.
+    compression = hvd.Compression.fp16 if opt.fp16_allreduce else hvd.Compression.none
+
     optimizer = optim.SGD(model.parameters(),
                           lr=opt.learning_rate,
                           momentum=opt.momentum,
                           weight_decay=opt.weight_decay)
+
+    # Horovod: wrap optimizer with DistributedOptimizer.
+    optimizer = hvd.DistributedOptimizer(
+                            optimizer, named_parameters=model.named_parameters(),
+                            compression=compression,
+                            backward_passes_per_step=opt.batches_per_allreduce,
+                            op=hvd.Adasum if opt.use_adasum else hvd.Average)
+
+
     return optimizer
 
 
 def save_model(model, optimizer, opt, epoch, save_file):
-    print('==> Saving...')
-    state = {
-        'opt': opt,
-        'model': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'epoch': epoch,
-    }
-    torch.save(state, save_file)
-    del state
+    if hvd.rank() == 0:
+        print('==> Saving...')
+        state = {
+            'opt': opt,
+            'model': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'epoch': epoch,
+        }
+        torch.save(state, save_file)
+        del state
