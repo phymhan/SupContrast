@@ -46,7 +46,7 @@ echo " Run started at:- "
 date
 
 horovodrun -np $SLURM_NTASKS  -H `cat $NODELIST` python \
-      $HOME2/SupContrast/src/main_supcon_hvd.py \
+      $HOME2/SupContrast/main_supcon_hvd.py \
       --batch_size 128 \
       --learning_rate 0.5 \
       --temp 0.1 \
