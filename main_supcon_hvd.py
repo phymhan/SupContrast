@@ -306,11 +306,10 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
 
 
 def main():
-    opt = parse_option()
-
     # distributed training
     hvd.init()
 
+    opt = parse_option()
 
     # build data loader
     train_loader = set_loader(opt)
