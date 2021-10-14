@@ -9,8 +9,11 @@ import math
 import tensorboard_logger as tb_logger
 import torch
 import torch.backends.cudnn as cudnn
+import torch.utils.data.distributed
+import horovod.torch as hvd
 from torchvision import transforms, datasets
 import numpy as np
+from distutils.version import LooseVersion
 
 from util import TwoCropTransform, AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate
@@ -55,7 +58,7 @@ def parse_option():
     # model dataset
     parser.add_argument('--model', type=str, default='resnet50')
     parser.add_argument('--dataset', type=str, default='cifar10',
-                        choices=['cifar10', 'cifar100', 'path'], help='dataset')
+                        choices=['cifar10', 'cifar100', 'imagenet', 'path'], help='dataset')
     parser.add_argument('--mean', type=str, help='mean of dataset in path in form of str tuple')
     parser.add_argument('--std', type=str, help='std of dataset in path in form of str tuple')
     parser.add_argument('--data_folder', type=str, default=None, help='path to custom dataset')
@@ -78,6 +81,18 @@ def parse_option():
                         help='warm-up for large batch training')
     parser.add_argument('--trial', type=str, default='0',
                         help='id for recording multiple runs')
+    
+    # distributed training
+    parser.add_argument('--dist', action='store_true', default=False,
+                        help='using distributed training')
+    parser.add_argument('--batches-per-allreduce', type=int, default=1,
+                        help='number of batches processed locally before '
+                            'executing allreduce across workers; it multiplies '
+                            'total batch size.')
+    parser.add_argument('--use-adasum', action='store_true', default=False,
+                        help='use adasum algorithm to do reduction')
+    parser.add_argument('--fp16-allreduce', action='store_true', default=False,
+                        help='use fp16 compression during allreduce')
 
     opt = parser.parse_args()
 
@@ -118,6 +133,10 @@ def parse_option():
                     1 + math.cos(math.pi * opt.warm_epochs / opt.epochs)) / 2
         else:
             opt.warmup_to = opt.learning_rate
+    
+    # scaling lr for distributed training (base_lr * # of GPUs)
+    lr_scaler = opt.batches_per_allreduce * hvd.size() if not opt.use_adasum else 1
+    opt.learning_rate = opt.learning_rate * lr_scaler
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
     if not os.path.isdir(opt.tb_folder):
@@ -138,6 +157,9 @@ def set_loader(opt):
     elif opt.dataset == 'cifar100':
         mean = (0.5071, 0.4867, 0.4408)
         std = (0.2675, 0.2565, 0.2761)
+    elif opt.dataset == 'imagenet':
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
     elif opt.dataset == 'path':
         mean = eval(opt.mean)
         std = eval(opt.std)
@@ -170,6 +192,11 @@ def set_loader(opt):
         train_dataset2 = datasets.CIFAR100(root=opt.data_folder,
                                           transform=TwoCropTransform(train_transform),
                                           download=True)
+    elif opt.dataset == 'imagenet':
+        train_dataset1 = datasets.ImageFolder(root=opt.data_folder,
+                                            transform=TwoCropTransform(train_transform))
+        train_dataset2 = datasets.ImageFolder(root=opt.data_folder,
+                                            transform=TwoCropTransform(train_transform))
     elif opt.dataset == 'path':
         train_dataset1 = datasets.ImageFolder(root=opt.data_folder,
                                             transform=TwoCropTransform(train_transform))
@@ -178,16 +205,14 @@ def set_loader(opt):
     else:
         raise ValueError(opt.dataset)
 
-    train_sampler = None
-    # train_loader = torch.utils.data.DataLoader(
-    #     ConcatDataset(train_dataset1, train_dataset2), batch_size=opt.batch_size, shuffle=(train_sampler is None),
-    #     num_workers=opt.num_workers, pin_memory=True, sampler=train_sampler, worker_init_fn=worker_init_fn)
-    train_loader = torch.utils.data.DataLoader(train_dataset1, batch_size=opt.batch_size, shuffle=(train_sampler is None),
-        num_workers=opt.num_workers, pin_memory=True, sampler=train_sampler, worker_init_fn=worker_init_fn)
-    train_loader1 = torch.utils.data.DataLoader(train_dataset2, batch_size=opt.batch_size, shuffle=(train_sampler is None),
-        num_workers=opt.num_workers, pin_memory=True, sampler=train_sampler, worker_init_fn=worker_init_fn)
+    train_dataset = ConcatDataset(train_dataset1, train_dataset2)
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=opt.batch_size, shuffle=True,
+        num_workers=opt.num_workers, pin_memory=True, sampler=train_sampler, 
+        drop_last=True, worker_init_fn=worker_init_fn)
 
-    return train_loader, train_loader1
+    return train_loader
 
 def worker_init_fn(worker_id):                                                          
     np.random.seed(np.random.get_state()[1][0] + worker_id)
@@ -201,37 +226,31 @@ def set_model(opt):
         model = apex.parallel.convert_syncbn_model(model)
 
     if torch.cuda.is_available():
-        if torch.cuda.device_count() > 1:
-            model.encoder = torch.nn.DataParallel(model.encoder)
+        # if torch.cuda.device_count() > 1:
+        #     model.encoder = torch.nn.DataParallel(model.encoder)
+        # pin GPU to local rank
+        torch.cuda.set_device(hvd.local_rank())
+        # Limit # of threads to be used per worker
+        torch.set_num_threads(8)
         model = model.cuda()
         criterion = criterion.cuda()
+
         cudnn.benchmark = True
 
     return model, criterion
 
 
-def train(train_loaders, model, criterion, optimizer, epoch, opt):
+def train(train_loader, model, criterion, optimizer, epoch, opt):
     """one epoch training"""
     model.train()
-
-    train_loader, train_loader1 = train_loaders
-    train_loader1_itr = iter(train_loader1)
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
 
     end = time.time()
-    # for idx, ((images, labels), (neg_images, _)) in enumerate(train_loader):
-    for idx, (images, labels) in enumerate(train_loader):
+    for idx, ((images, labels), (neg_images, _)) in enumerate(train_loader):
         data_time.update(time.time() - end)
-
-        # Randomly sampling another batch to use as negatives samples
-        try:
-            neg_images, _ = next(train_loader1_itr)
-        except StopIteration:
-            train_loader1_itr = iter(train_loader1)
-            neg_images, _ = next(train_loader1_itr)
 
         images = torch.cat([images[0], images[1]], dim=0)
         if torch.cuda.is_available():
@@ -287,16 +306,23 @@ def train(train_loaders, model, criterion, optimizer, epoch, opt):
 
 
 def main():
+    # distributed training
+    hvd.init()
+
     opt = parse_option()
 
     # build data loader
-    train_loaders = set_loader(opt)
+    train_loader = set_loader(opt)
 
     # build model and criterion
     model, criterion = set_model(opt)
 
     # build optimizer
     optimizer = set_optimizer(opt, model)
+
+    # Horovod: broadcast parameters & optimizer state.
+    hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+    hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
     # tensorboard
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
@@ -307,7 +333,7 @@ def main():
 
         # train for one epoch
         time1 = time.time()
-        loss = train(train_loaders, model, criterion, optimizer, epoch, opt)
+        loss = train(train_loader, model, criterion, optimizer, epoch, opt)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
