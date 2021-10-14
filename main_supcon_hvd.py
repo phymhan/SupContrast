@@ -363,10 +363,10 @@ def train(train_loader, neg_dataset, top5_dict, model, criterion, optimizer, epo
 
 
 def main():
-    opt = parse_option()
-
     # distributed training
     hvd.init()
+    
+    opt = parse_option()
 
     # build data loader & negative dataset
     train_loader, neg_dataset = set_loader(opt)
