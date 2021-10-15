@@ -382,7 +382,8 @@ def main():
     hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
     # tensorboard
-    logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
+    if hvd.rank() == 0:
+        logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
 
     # build top5 
     top5_dict = get_top5(opt)
@@ -398,8 +399,9 @@ def main():
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
         # tensorboard logger
-        logger.log_value('loss', loss, epoch)
-        logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
+        if hvd.rank() == 0:
+            logger.log_value('loss', loss, epoch)
+            logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
 
         if epoch % opt.save_freq == 0:
             save_file = os.path.join(
