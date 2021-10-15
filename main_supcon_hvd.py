@@ -11,6 +11,7 @@ import tensorboard_logger as tb_logger
 import torch
 import torch.backends.cudnn as cudnn
 from torchvision import transforms, datasets
+import torchvision
 import horovod.torch as hvd
 import numpy as np
 from tqdm import tqdm
@@ -244,7 +245,7 @@ def get_top5(opt):
     if opt.dataset == 'cifar100':
         model = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_resnet56", pretrained=True)
     elif opt.dataset == 'imagenet':
-        model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet50', pretrained=True)
+        model = torchvision.models.resnet50(pretrained=True) #torch.hub.load('pytorch/vision:v0.10.0', 'resnet50', pretrained=True)
     model.eval()
 
     top5_dict = {}
@@ -263,6 +264,8 @@ def get_top5(opt):
     # save
     with open(file_path, 'wb') as f:
         pickle.dump(top5_dict, f, pickle.HIGHEST_PROTOCOL)
+    
+    del model
 
     return top5_dict
             
