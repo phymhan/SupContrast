@@ -253,7 +253,7 @@ def get_top5(opt):
     if opt.dataset == 'cifar100':
         model = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_resnet56", pretrained=True)
     elif opt.dataset == 'imagenet':
-        model = torchvision.models.resnet50(pretrained=True) #torch.hub.load('pytorch/vision:v0.10.0', 'resnet50', pretrained=True)
+        model = torchvision.models.resnet50(pretrained=True).cuda() #torch.hub.load('pytorch/vision:v0.10.0', 'resnet50', pretrained=True)
     model.eval()
 
     top5_dict = {}
@@ -261,8 +261,8 @@ def get_top5(opt):
     # building a dict of index => top 5 predicted labels without the ground truth
     with torch.no_grad():
         for idx, (images, labels, idxs) in enumerate(tqdm(train_loader)):
-            outputs = model(images)
-            preds_top5 = torch.topk(outputs, 5)[1]
+            outputs = model(images.cuda())
+            preds_top5 = torch.topk(outputs.cpu(), 5)[1]
             
             for i in range(len(preds_top5)):
                 top5_nogt = preds_top5[i][labels[i]!=preds_top5[i]]
