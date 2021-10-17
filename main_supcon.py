@@ -10,6 +10,7 @@ import pickle
 import tensorboard_logger as tb_logger
 import torch
 import torch.backends.cudnn as cudnn
+import torchvision
 from torchvision import transforms, datasets
 from tqdm import tqdm
 
@@ -126,11 +127,11 @@ def parse_option():
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
     if not os.path.isdir(opt.tb_folder):
-        os.makedirs(opt.tb_folder)
+        os.makedirs(opt.tb_folder, exist_ok=True)
 
     opt.save_folder = os.path.join(opt.model_path, opt.model_name)
     if not os.path.isdir(opt.save_folder):
-        os.makedirs(opt.save_folder)
+        os.makedirs(opt.save_folder, exist_ok=True)
 
     return opt
 
@@ -143,6 +144,9 @@ def set_loader(opt):
     elif opt.dataset == 'cifar100':
         mean = (0.5071, 0.4867, 0.4408)
         std = (0.2675, 0.2565, 0.2761)
+    elif opt.dataset == 'imagenet':
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
     elif opt.dataset == 'path':
         mean = eval(opt.mean)
         std = eval(opt.std)
@@ -202,6 +206,9 @@ def get_top5(opt):
     elif opt.dataset == 'cifar100':
         mean = (0.5071, 0.4867, 0.4408)
         std = (0.2675, 0.2565, 0.2761)
+    elif opt.dataset == 'imagenet':
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
     elif opt.dataset == 'path':
         mean = eval(opt.mean)
         std = eval(opt.std)
@@ -221,7 +228,10 @@ def get_top5(opt):
         num_workers=opt.num_workers, pin_memory=True)
 
     # load pre-trained model for top5 prediction
-    model = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_resnet56", pretrained=True)
+    if opt.dataset == 'cifar100':
+        model = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_resnet56", pretrained=True)
+    elif opt.dataset == 'imagenet':
+        model = torchvision.models.resnet50(pretrained=True) #torch.hub.load('pytorch/vision:v0.10.0', 'resnet50', pretrained=True)
     model.eval()
 
     top5_dict = {}
@@ -251,7 +261,7 @@ def set_model(opt):
 
     # enable synchronized Batch Normalization
     if opt.syncBN:
-        model = apex.parallel.convert_syncbn_model(model)
+        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     if torch.cuda.is_available():
         if torch.cuda.device_count() > 1:
