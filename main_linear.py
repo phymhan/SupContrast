@@ -61,6 +61,10 @@ def parse_option():
     parser.add_argument('--ckpt', type=str, default='',
                         help='path to pre-trained model')
 
+    # distributed training
+    parser.add_argument('--dist', action='store_true', default=False,
+                        help='using distributed training')
+
     opt = parser.parse_args()
 
     # set the path according to the environment
