@@ -216,10 +216,18 @@ def get_top5(opt):
         raise ValueError('dataset not supported: {}'.format(opt.dataset))
     normalize = transforms.Normalize(mean=mean, std=std)
 
-    train_transform = transforms.Compose([
-        transforms.ToTensor(),
-        normalize,
-    ])
+    if opt.dataset == 'imagenet':
+        train_transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            normalize,
+        ])
+    else:
+        train_transform = transforms.Compose([
+            transforms.ToTensor(),
+            normalize,
+        ])
 
     train_dataset = IdxDataset(opt.dataset, opt.data_folder, transform=train_transform, train=True)
 
