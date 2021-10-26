@@ -8,7 +8,7 @@
 #SBATCH --gres=gpu:4
 #SBATCH --gpus-per-node=4
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=8
+#SBATCH --ntasks-per-node=16
 #SBATCH --mem=1T
 #SBATCH --time=24:00:00
 #SBATCH --qos=sched_level_2
