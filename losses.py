@@ -3,7 +3,6 @@ Author: Yonglong Tian (yonglong@mit.edu)
 Date: May 07, 2020
 """
 from __future__ import print_function
-from SupContrast.utils import gather_from_all
 
 import torch
 import torch.nn as nn
