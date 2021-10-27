@@ -198,7 +198,7 @@ class SimCLR(nn.Module):
         z1 = self.projector(r1)
         z2 = self.projector(r2)
 
-        loss = self.loss_fn(z1, z2)
+        loss = self.loss_fn(z1, z2, labels)
 
         logits = self.onne_head(r1.detach())
         cls_loss = torch.nn.functional.cross_entropy(logits, labels)
