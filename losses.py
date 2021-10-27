@@ -8,7 +8,7 @@ from SupContrast.utils import gather_from_all
 import torch
 import torch.nn as nn
 
-from utils import gather_from_all
+from dist_utils import gather_from_all
 
 
 class SupConLoss(nn.Module):
@@ -130,7 +130,7 @@ class SupConLoss1(nn.Module):
         features1 = gather_from_all(features1)
         features2 = gather_from_all(features2)
         labels = gather_from_all(labels)
-        
+
         batch_size = features1.shape[0]
         if labels is not None and mask is not None:
             raise ValueError('Cannot define both `labels` and `mask`')
