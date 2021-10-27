@@ -12,7 +12,7 @@ from torch import nn, optim
 import torch
 import torchvision
 import torchvision.transforms as transforms
-import wandb
+#import wandb
 
 from utils import gather_from_all
 from losses import SupConLoss1
@@ -55,7 +55,7 @@ def main():
 
 
 def main_worker(gpu, args):
-    wandb.init(project=args.name)
+    #wandb.init(project=args.name)
     args.rank += gpu
     torch.distributed.init_process_group(
         backend='nccl', init_method=args.dist_url,

@@ -6,7 +6,6 @@
 #SBATCH --mail-user=swhan@mit.edu
 #SBATCH --mail-type=ALL
 #SBATCH --gres=gpu:32g:6
-#SBATCH --gpus-per-node=6
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=16
 #SBATCH --mem=500g
