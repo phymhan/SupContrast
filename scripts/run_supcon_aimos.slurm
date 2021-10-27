@@ -47,8 +47,8 @@ python \
       --data /gpfs/u/locker/200/CADS/datasets/ImageNet/train/ \
       --workers 16 \
       --epochs 800 \
-      --batch_size 256 \
-      --learning_rate 1.2 \
+      --batch-size 256 \
+      --learning-rate 1.2 \
       --temp 0.1 \
       --dataset imagenet \
       --print-freq 50 \
