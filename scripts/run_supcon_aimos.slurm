@@ -50,7 +50,6 @@ python \
       --batch-size 256 \
       --learning-rate 1.2 \
       --temp 0.1 \
-      --dataset imagenet \
       --print-freq 50 \
       --checkpoint-dir $HOME2/SupContrast/results/ \
       --name supcon-baseline-imagenet
