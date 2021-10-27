@@ -291,7 +291,7 @@ class Transform:
     def __init__(self, args):
         self.transform = transforms.Compose([
             transforms.RandomResizedCrop(224, interpolation=Image.BICUBIC),
-            transforms.RandomHorizontalFp(p=0.5),
+            transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply(
                 [transforms.ColorJitter(brightness=0.4, contrast=0.4,
                                         saturation=0.2, hue=0.1)],
@@ -306,7 +306,7 @@ class Transform:
         ])
         self.transform_prime = transforms.Compose([
             transforms.RandomResizedCrop(224, interpolation=Image.BICUBIC),
-            transforms.RandomHorizontalFp(p=0.5),
+            transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply(
                 [transforms.ColorJitter(brightness=0.4, contrast=0.4,
                                         saturation=0.2, hue=0.1)],
