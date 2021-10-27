@@ -14,7 +14,7 @@ import torchvision
 import torchvision.transforms as transforms
 #import wandb
 
-from utils import gather_from_all
+from dist_utils import gather_from_all
 from losses import SupConLoss1
 
 _logger = logging.getLogger('train')
