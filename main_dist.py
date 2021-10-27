@@ -1,4 +1,4 @@
-from pathb import Path
+from pathlib import Path
 import argparse
 import sys
 import random
