@@ -228,6 +228,9 @@ def supcon_loss(z1, z2, labels, mask=None, temperature=0.1, base_temperature=0.0
     features2 = gather_from_all(z2)
     labels = gather_from_all(labels)
 
+    features1 = torch.nn.functional.normalize(features1, dim=1)
+    features2 = torch.nn.functional.normalize(features2, dim=1)
+
     device = (torch.device('cuda')
                 if features1.is_cuda
                 else torch.device('cpu'))
