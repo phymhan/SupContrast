@@ -13,7 +13,7 @@
 #SBATCH --exclusive
 
 ## User python environment
-HOME2=/gpfs/u/home/BNSS/BNSSsgwh/
+HOME2=/gpfs/u/home/BNSS/BNSSsgwh
 PYTHON_VIRTUAL_ENVIRONMENT=pytorch1.7
 CONDA_ROOT=$HOME2/barn/miniconda3
 
