@@ -133,8 +133,10 @@ def main_worker(gpu, args):
     
     _logger.info('Writing top5 to dict')
     # save
-    with open(file_path, 'wb') as f:
-        pickle.dump(top5_dict, f, pickle.HIGHEST_PROTOCOL)
+    
+    if args.rank == 0:
+        with open(file_path, 'wb') as f:
+            pickle.dump(top5_dict, f, pickle.HIGHEST_PROTOCOL)
 
 
 def adjust_learning_rate(args, optimizer, loader, step):

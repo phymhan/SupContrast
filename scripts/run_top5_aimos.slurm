@@ -44,7 +44,7 @@ awk "{ print \$0 \"-ib slots=$SLURM_NTASKS_PER_NODE\"; }" ~/tmp/hosts.$SLURM_JOB
 mv ~/tmp/tmp.$SLURM_JOBID ~/tmp/hosts.$SLURM_JOBID
 
 python \
-      $HOME2/scratch/SupContrast/main_dist.py \
+      $HOME2/scratch/SupContrast/main_dist_top5.py \
       --data /gpfs/u/locker/200/CADS/datasets/ImageNet/train/ \
       --workers 16 \
       --epochs 800 \
