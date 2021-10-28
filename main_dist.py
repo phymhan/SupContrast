@@ -60,7 +60,7 @@ def main():
     torch.multiprocessing.spawn(main_worker, (args,), args.ngpus_per_node)
 
 def load_top5(args):
-    file_path = os.path.join(args.checkpoint_dir, + 'imagenet_top5.pkl')
+    file_path = os.path.join(args.checkpoint_dir, 'imagenet_top5.pkl')
     if os.path.isfile(file_path):
         print('Loading top5 dict')
         with open(file_path, 'rb') as f:
