@@ -6,7 +6,7 @@
 #SBATCH --mail-user=swhan@mit.edu
 #SBATCH --mail-type=ALL
 #SBATCH --gres=gpu:32g:6
-#SBATCH --nodes=2
+#SBATCH --nodes=1
 #SBATCH --ntasks-per-node=16
 #SBATCH --mem=500g
 #SBATCH --time=06:00:00
@@ -53,6 +53,7 @@ python \
       --temp 0.1 \
       --print-freq 50 \
       --checkpoint-dir $HOME2/scratch/SupContrast/results/ \
+      --log-dir $HOME2/scratch/SupContrast/logs/ \
       --name supcon-baseline-imagenet-bs1536
 
 echo "Run completed at:- "
