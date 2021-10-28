@@ -19,7 +19,6 @@ import pickle
 #import wandb
 
 from dist_utils import gather_from_all
-from losses import SupConLoss1
 from dataset import IdxDataset
 
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
