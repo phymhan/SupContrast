@@ -71,7 +71,8 @@ def main_worker(gpu, args):
 
     torch.cuda.set_device(gpu)
     torch.backends.cudnn.benchmark = True
-
+    
+    _logger.info('Creating model')
     model = SimCLR(args).cuda(gpu)
     model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
@@ -91,6 +92,7 @@ def main_worker(gpu, args):
     else:
         start_epoch = 0
 
+    _logger.info('Creating dataset')
     dataset = torchvision.datasets.ImageFolder(args.data, Transform(args))
     sampler = torch.utils.data.distributed.DistributedSampler(dataset, drop_last=True)
     assert args.batch_size % args.world_size == 0
@@ -102,7 +104,9 @@ def main_worker(gpu, args):
     start_time = time.time()
     scaler = torch.cuda.amp.GradScaler()
 
+    _logger.info('Starting training')
     for epoch in range(start_epoch, args.epochs):
+        _logger.info(f'Starting training epoch {epoch}')
         sampler.set_epoch(epoch)
 
         for step, ((y1, y2), labels) in enumerate(loader, start=epoch * len(loader)):
