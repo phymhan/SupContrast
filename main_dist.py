@@ -188,7 +188,7 @@ class SimCLR(nn.Module):
         self.projector = nn.Sequential(*layers)
 
         self.onne_head = nn.Linear(2048, 1000)
-        self.loss_fn = SupConLoss1(temperature=args.temp)
+        self.loss_fn = supcon_loss
 
     def forward(self, y1, y2, labels):
         r1 = self.backbone(y1)
@@ -198,7 +198,7 @@ class SimCLR(nn.Module):
         z1 = self.projector(r1)
         z2 = self.projector(r2)
 
-        loss = self.loss_fn(z1, z2)
+        loss = self.loss_fn(z1, z2, labels)
 
         logits = self.onne_head(r1.detach())
         cls_loss = torch.nn.functional.cross_entropy(logits, labels)
@@ -219,6 +219,73 @@ def infoNCE(z1, z2, temperature=0.1):
     n = z2.shape[0]
     labels = torch.arange(0, n, dtype=torch.long).cuda()
     loss = torch.nn.functional.cross_entropy(logits, labels)
+    return loss
+
+def supcon_loss(z1, z2, labels, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
+
+
+    features1 = gather_from_all(z1)
+    features2 = gather_from_all(z2)
+    labels = gather_from_all(labels)
+
+    device = (torch.device('cuda')
+                if features1.is_cuda
+                else torch.device('cpu'))
+
+    batch_size = features1.shape[0]
+    if labels is not None and mask is not None:
+        raise ValueError('Cannot define both `labels` and `mask`')
+    elif labels is None and mask is None:
+        mask = torch.eye(batch_size, dtype=torch.float32).to(device)
+    elif labels is not None:
+        labels = labels.contiguous().view(-1, 1)
+        if labels.shape[0] != batch_size:
+            raise ValueError('Num of labels does not match num of features')
+        mask = torch.eq(labels, labels.T).float().to(device)
+    else:
+        mask = mask.float().to(device)
+
+    contrast_count = 2
+    contrast_feature = torch.cat([features1, features2], dim=0)
+    if contrast_mode == 'one':
+        anchor_feature = features1
+        anchor_count = 1
+    elif contrast_mode == 'all':
+        anchor_feature = contrast_feature
+        anchor_count = contrast_count
+    else:
+        raise ValueError('Unknown mode: {}'.format(contrast_mode))
+
+    # compute logits
+    anchor_dot_contrast = torch.div(
+        torch.matmul(anchor_feature, contrast_feature.T),
+        temperature)
+    # for numerical stability
+    logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
+    logits = anchor_dot_contrast - logits_max.detach()
+
+    # tile mask
+    mask = mask.repeat(anchor_count, contrast_count)
+    # mask-out self-contrast cases
+    logits_mask = torch.scatter(
+        torch.ones_like(mask),
+        1,
+        torch.arange(batch_size * anchor_count).view(-1, 1).to(device),
+        0
+    )
+    mask = mask * logits_mask
+
+    # compute log_prob
+    exp_logits = torch.exp(logits) * logits_mask
+    log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+
+    # compute mean of log-likelihood over positive
+    mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
+
+    # loss
+    loss = - (temperature / base_temperature) * mean_log_prob_pos
+    loss = loss.view(anchor_count, batch_size).mean()
+
     return loss
 
 
