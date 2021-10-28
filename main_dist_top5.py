@@ -96,7 +96,7 @@ def main_worker(gpu, args):
 
     top5_dict = {}
 
-    file_path = os.path.join(args.checkpoint_dir, + 'imagenet_top5.pkl')
+    file_path = os.path.join(args.checkpoint_dir, 'imagenet_top5.pkl')
     if os.path.isfile(file_path):
         print('Loading top5 dict')
         with open(file_path, 'rb') as f:
