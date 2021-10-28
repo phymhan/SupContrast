@@ -14,10 +14,11 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
+import pickle
 #import wandb
 
 from dist_utils import gather_from_all
-from losses import SupConLoss1
+from dataset import IdxDataset, ClassDataset
 
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 _logger = logging.getLogger('train')
@@ -39,7 +40,8 @@ parser.add_argument('--print-freq', default=10, type=int, metavar='N',
                     help='print frequency')
 parser.add_argument('--checkpoint-dir', default='/anonymous/', type=Path,
                     metavar='DIR', help='path to checkpoint directory')
-parser.add_argument('--log-dir', type=str, default='./logs/')                    
+parser.add_argument('--log-dir', type=str, default='./logs/')
+parser.add_argument('--top5-path', type=str, default='./imagenet_top5.pkl')
 parser.add_argument('--name', type=str, default='test')
 
 
@@ -57,6 +59,12 @@ def main():
     args.world_size = args.ngpus_per_node
     torch.multiprocessing.spawn(main_worker, (args,), args.ngpus_per_node)
 
+def load_top5(args):
+    file_path = os.path.join(args.checkpoint_dir, + 'imagenet_top5.pkl')
+    if os.path.isfile(file_path):
+        print('Loading top5 dict')
+        with open(file_path, 'rb') as f:
+            return pickle.load(f)
 
 def main_worker(gpu, args):
     #wandb.init(project=args.name)
@@ -67,7 +75,7 @@ def main_worker(gpu, args):
             tb_logger = SummaryWriter(args.log_dir + args.name)
         except:
             tb_logger = SummaryWriter(args.log_dir + args.name + '1')
-            
+
     torch.distributed.init_process_group(
         backend='nccl', init_method=args.dist_url,
         world_size=args.world_size, rank=args.rank)
@@ -81,6 +89,9 @@ def main_worker(gpu, args):
 
     torch.cuda.set_device(gpu)
     torch.backends.cudnn.benchmark = True
+
+    _logger.info('Loading top5 dict')
+    top5_dict = load_top5(args)
     
     _logger.info('Creating model')
     model = SimCLR(args).cuda(gpu)
@@ -104,6 +115,7 @@ def main_worker(gpu, args):
 
     _logger.info('Creating dataset')
     dataset = torchvision.datasets.ImageFolder(args.data, Transform(args))
+    neg_dataset = ClassDataset('imagenet', args.data, transform=Transform(args), is_train=True)
     sampler = torch.utils.data.distributed.DistributedSampler(dataset, drop_last=True)
     assert args.batch_size % args.world_size == 0
     per_device_batch_size = args.batch_size // args.world_size
@@ -119,15 +131,23 @@ def main_worker(gpu, args):
         _logger.info(f'Starting training epoch {epoch}')
         sampler.set_epoch(epoch)
 
-        for step, ((y1, y2), labels) in enumerate(loader, start=epoch * len(loader)):
+        for step, ((y1, y2), labels, idxs) in enumerate(loader, start=epoch * len(loader)):
             itr_start = time.time()
             y1 = y1.cuda(gpu, non_blocking=True)
             y2 = y2.cuda(gpu, non_blocking=True)
 
+            # Get aggregate top 5 samples
+            top5 = torch.cat([top5_dict[int(i)] for i in idxs])
+            top5 = torch.unique(top5)
+            # Sampling (batch_size - 1) number of negative samples
+            neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=idxs.shape[0]-1)
+            neg_images = neg_images.cuda(gpu, non_blocking=True)
+            
+
             lr = adjust_learning_rate(args, optimizer, loader, step)
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
-                loss, acc = model.forward(y1, y2, labels)
+                loss, acc = model.forward(y1, y2, neg_images, labels)
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -212,15 +232,17 @@ class SimCLR(nn.Module):
         self.onne_head = nn.Linear(2048, 1000)
         self.loss_fn = supcon_loss
 
-    def forward(self, y1, y2, labels):
+    def forward(self, y1, y2, neg_images, labels):
         r1 = self.backbone(y1)
         r2 = self.backbone(y2)
+        r3 = self.backbone(neg_images)
 
         # projection
         z1 = self.projector(r1)
         z2 = self.projector(r2)
+        z3 = self.projector(r3)
 
-        loss = self.loss_fn(z1, z2, labels)
+        loss = self.loss_fn(z1, z2, labels, neg_features=z3)
 
         logits = self.onne_head(r1.detach())
         cls_loss = torch.nn.functional.cross_entropy(logits, labels)
@@ -243,13 +265,15 @@ def infoNCE(z1, z2, temperature=0.1):
     loss = torch.nn.functional.cross_entropy(logits, labels)
     return loss
 
-def supcon_loss(z1, z2, labels, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
+def supcon_loss(z1, z2, labels, neg_features=None, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
     features1 = gather_from_all(z1)
     features2 = gather_from_all(z2)
+    neg_features = gather_from_all(neg_features)
     labels = gather_from_all(labels)
 
     features1 = torch.nn.functional.normalize(features1, dim=1)
     features2 = torch.nn.functional.normalize(features2, dim=1)
+    neg_features = torch.nn.functional.normalize(neg_features, dim=1)
 
     device = (torch.device('cuda')
                 if features1.is_cuda
@@ -279,6 +303,10 @@ def supcon_loss(z1, z2, labels, mask=None, temperature=0.1, base_temperature=0.0
     else:
         raise ValueError('Unknown mode: {}'.format(contrast_mode))
 
+    # If negative features provided separately, add to contrast feature
+    if neg_features is not None:
+        contrast_feature = torch.cat([contrast_feature, neg_features], dim=0)
+
     # compute logits
     anchor_dot_contrast = torch.div(
         torch.matmul(anchor_feature, contrast_feature.T),
@@ -286,6 +314,9 @@ def supcon_loss(z1, z2, labels, mask=None, temperature=0.1, base_temperature=0.0
     # for numerical stability
     #logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
     logits = anchor_dot_contrast #- logits_max.detach()
+
+    if neg_features is not None:
+        logits, neg_logits = torch.split(logits, [anchor_feature.shape[0], neg_features.shape[0]], dim=-1)
 
     # tile mask
     mask = mask.repeat(anchor_count, contrast_count)
@@ -299,9 +330,17 @@ def supcon_loss(z1, z2, labels, mask=None, temperature=0.1, base_temperature=0.0
     mask = mask * logits_mask
 
     # compute log_prob
-    exp_logits = torch.exp(logits) * logits_mask
-    log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
-
+    if neg_features is not None:
+        # use separate negatives provided
+        exp_logits = torch.exp(neg_logits)
+        
+    else:
+        # use negatives within batch
+        exp_logits = torch.exp(logits) * logits_mask
+    
+    # Adding numerator to denominator for normalization
+    log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True) + torch.exp(logits))
+    
     # compute mean of log-likelihood over positive
     mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
 

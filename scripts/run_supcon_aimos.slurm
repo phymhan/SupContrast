@@ -54,6 +54,7 @@ python \
       --print-freq 50 \
       --checkpoint-dir $HOME2/scratch/SupContrast/results/ \
       --log-dir $HOME2/scratch/SupContrast/logs/ \
+      --top5-path $HOME2/scratch/SupContrast/imagenet_top5.pkl \
       --name supcon-baseline-imagenet
 
 echo "Run completed at:- "
