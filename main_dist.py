@@ -114,7 +114,7 @@ def main_worker(gpu, args):
         start_epoch = 0
 
     _logger.info('Creating dataset')
-    dataset = torchvision.datasets.ImageFolder(args.data, Transform(args))
+    dataset = IdxDataset('imagenet', args.data, Transform(args))
     neg_dataset = ClassDataset('imagenet', args.data, transform=Transform(args), is_train=True)
     sampler = torch.utils.data.distributed.DistributedSampler(dataset, drop_last=True)
     assert args.batch_size % args.world_size == 0
