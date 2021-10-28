@@ -1,8 +1,8 @@
 #!/bin/bash
 
-#SBATCH -J supcon_baseline
-#SBATCH -o supcon_baseline%j.out
-#SBATCH -e supcon_baseline%j.err
+#SBATCH -J supcon_negboost
+#SBATCH -o supcon_negboost%j.out
+#SBATCH -e supcon_negboost%j.err
 #SBATCH --mail-user=swhan@mit.edu
 #SBATCH --mail-type=ALL
 #SBATCH --gres=gpu:32g:6
@@ -44,7 +44,7 @@ awk "{ print \$0 \"-ib slots=$SLURM_NTASKS_PER_NODE\"; }" ~/tmp/hosts.$SLURM_JOB
 mv ~/tmp/tmp.$SLURM_JOBID ~/tmp/hosts.$SLURM_JOBID
 
 python \
-      $HOME2/scratch/SupContrast/main_dist.py \
+      $HOME2/scratch/top5/SupContrast/main_dist.py \
       --data /gpfs/u/locker/200/CADS/datasets/ImageNet/train/ \
       --workers 16 \
       --epochs 800 \
@@ -52,9 +52,9 @@ python \
       --learning-rate 1.2 \
       --temp 0.1 \
       --print-freq 50 \
-      --checkpoint-dir $HOME2/scratch/SupContrast/results/ \
+      --checkpoint-dir $HOME2/scratch/top5/SupContrast/results/ \
       --log-dir $HOME2/scratch/SupContrast/logs/ \
-      --top5-path $HOME2/scratch/SupContrast/imagenet_top5.pkl \
+      --top5-path $HOME2/scratch/top5/SupContrast/imagenet_top5.pkl \
       --name supcon-baseline-imagenet
 
 echo "Run completed at:- "
