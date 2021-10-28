@@ -6,6 +6,7 @@ import time
 import json
 import math
 import logging
+import os
 
 from PIL import Image, ImageOps, ImageFilter
 from torch import nn, optim
@@ -81,6 +82,7 @@ def main_worker(gpu, args):
 
     # automatically resume from checkpoint if it exists
     if (args.checkpoint_dir / 'checkpoint.pth').is_file():
+        _logger.info('Resuming from checkpoint')
         ckpt = torch.load(args.checkpoint_dir / 'checkpoint.pth',
                           map_location='cpu')
         start_epoch = ckpt['epoch']
@@ -132,6 +134,7 @@ def main_worker(gpu, args):
             _logger.info(f'Saved checkpoint {epoch}')
             state = dict(epoch=epoch + 1, model=model.state_dict(),
                          optimizer=optimizer.state_dict())
+            os.rename(args.checkpoint_dir / 'checkpoint.pth', args.checkpoint_dir / f'checkpoint_{epoch}')
             torch.save(state, args.checkpoint_dir / 'checkpoint.pth')
 
     if args.rank == 0:
@@ -142,10 +145,10 @@ def main_worker(gpu, args):
                         head=model.module.onne_head.state_dict()),
                     args.checkpoint_dir + args.name + '-resnet50.pth')
 
-        torch.save(dict(backbone=model.module.backbone.state_dict(),
-                        projector=model.module.projector.state_dict(),
-                        head=model.module.onne_head.state_dict()),
-                    args.checkpoint_dir / (str(epoch) + '_checkpoint.pth'))
+        # torch.save(dict(backbone=model.module.backbone.state_dict(),
+        #                 projector=model.module.projector.state_dict(),
+        #                 head=model.module.onne_head.state_dict()),
+        #             args.checkpoint_dir / (str(epoch) + '_checkpoint.pth'))
 
 
 def adjust_learning_rate(args, optimizer, loader, step):
