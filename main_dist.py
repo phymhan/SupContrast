@@ -13,11 +13,13 @@ from torch import nn, optim
 import torch
 import torchvision
 import torchvision.transforms as transforms
+from torch.utils.tensorboard import SummaryWriter
 #import wandb
 
 from dist_utils import gather_from_all
 from losses import SupConLoss1
 
+logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 _logger = logging.getLogger('train')
 
 parser = argparse.ArgumentParser(description='Supervised Contrastive Learning with Negative Boosting')
@@ -37,6 +39,7 @@ parser.add_argument('--print-freq', default=10, type=int, metavar='N',
                     help='print frequency')
 parser.add_argument('--checkpoint-dir', default='/anonymous/', type=Path,
                     metavar='DIR', help='path to checkpoint directory')
+parser.add_argument('--log-dir', type=str, default='./logs/')                    
 parser.add_argument('--name', type=str, default='test')
 
 
@@ -57,6 +60,9 @@ def main():
 
 def main_worker(gpu, args):
     #wandb.init(project=args.name)
+    if args.rank == 0:
+        tb_logger = SummaryWriter(args.log_dir)
+
     args.rank += gpu
     torch.distributed.init_process_group(
         backend='nccl', init_method=args.dist_url,
@@ -124,6 +130,10 @@ def main_worker(gpu, args):
             scaler.update()
             itr_end = time.time()
             itr_time = itr_end - itr_start
+            
+            if args.rank == 0:
+                tb_logger.add_scalar('loss', loss.item())
+                tb_logger.add_scalar('acc', acc.item())
 
             if step % args.print_freq == 0:
                 torch.distributed.reduce(acc.div_(args.world_size), 0)

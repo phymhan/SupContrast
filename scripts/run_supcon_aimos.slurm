@@ -10,6 +10,7 @@
 #SBATCH --ntasks-per-node=16
 #SBATCH --mem=500g
 #SBATCH --time=6:00:00
+#SBATCH --exclusive
 
 ## User python environment
 HOME2=/gpfs/u/home/BNSS/BNSSsgwh/
@@ -47,11 +48,12 @@ python \
       --data /gpfs/u/locker/200/CADS/datasets/ImageNet/train/ \
       --workers 16 \
       --epochs 800 \
-      --batch-size 256 \
+      --batch-size 768 \
       --learning-rate 1.2 \
       --temp 0.1 \
       --print-freq 50 \
-      --checkpoint-dir $HOME2/SupContrast/results/ \
+      --checkpoint-dir $HOME2/scratch/SupContrast/results/ \
+      --log-dir $HOME2/scratch/SupContrast/logs/ \
       --name supcon-baseline-imagenet
 
 echo "Run completed at:- "
