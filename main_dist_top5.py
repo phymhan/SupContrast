@@ -85,7 +85,7 @@ def main_worker(gpu, args):
     model.eval()
 
     _logger.info('Creating dataset')
-    dataset = IdxDataset(args.data, Transform(args))
+    dataset = IdxDataset('imagenet', args.data, Transform(args))
     sampler = torch.utils.data.distributed.DistributedSampler(dataset, drop_last=False)
     assert args.batch_size % args.world_size == 0
     per_device_batch_size = args.batch_size // args.world_size
