@@ -181,10 +181,10 @@ class SimCLR(nn.Module):
         layers = []
         for i in range(len(sizes) - 2):
             layers.append(nn.Linear(sizes[i], sizes[i + 1], bias=False))
-            layers.append(nn.BatchNorm1d(sizes[i + 1]))
+            layers.append(nn.BatchNorm1d(sizes[i + 1], affine=False))
             layers.append(nn.ReLU(inplace=True))
         layers.append(nn.Linear(sizes[-2], sizes[-1], bias=False))
-        layers.append(nn.BatchNorm1d(sizes[-1]))
+        layers.append(nn.BatchNorm1d(sizes[-1]), affine=False)
         self.projector = nn.Sequential(*layers)
 
         self.onne_head = nn.Linear(2048, 1000)
@@ -222,14 +222,12 @@ def infoNCE(z1, z2, temperature=0.1):
     return loss
 
 def supcon_loss(z1, z2, labels, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
-
-
     features1 = gather_from_all(z1)
     features2 = gather_from_all(z2)
     labels = gather_from_all(labels)
 
-    features1 = torch.nn.functional.normalize(features1, dim=1)
-    features2 = torch.nn.functional.normalize(features2, dim=1)
+    # features1 = torch.nn.functional.normalize(features1, dim=1)
+    # features2 = torch.nn.functional.normalize(features2, dim=1)
 
     device = (torch.device('cuda')
                 if features1.is_cuda
@@ -264,8 +262,8 @@ def supcon_loss(z1, z2, labels, mask=None, temperature=0.1, base_temperature=0.0
         torch.matmul(anchor_feature, contrast_feature.T),
         temperature)
     # for numerical stability
-    logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
-    logits = anchor_dot_contrast - logits_max.detach()
+    #logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
+    logits = anchor_dot_contrast #- logits_max.detach()
 
     # tile mask
     mask = mask.repeat(anchor_count, contrast_count)
@@ -315,7 +313,7 @@ class LARS(optim.Optimizer):
                 if g['lars_adaptation_filter'] is None or not g['lars_adaptation_filter'](p):
                     param_norm = torch.norm(p)
                     update_norm = torch.norm(dp)
-                    one = torch.ones_ke(param_norm)
+                    one = torch.ones_like(param_norm)
                     q = torch.where(param_norm > 0.,
                                     torch.where(update_norm > 0,
                                                 (g['eta'] * param_norm / update_norm), one), one)
@@ -323,7 +321,7 @@ class LARS(optim.Optimizer):
 
                 param_state = self.state[p]
                 if 'mu' not in param_state:
-                    param_state['mu'] = torch.zeros_ke(p)
+                    param_state['mu'] = torch.zeros_like(p)
                 mu = param_state['mu']
                 mu.mul_(g['momentum']).add_(dp)
 
