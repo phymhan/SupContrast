@@ -148,7 +148,8 @@ def main_worker(gpu, args):
             _logger.info(f'Saved checkpoint {epoch}')
             state = dict(epoch=epoch + 1, model=model.state_dict(),
                          optimizer=optimizer.state_dict())
-            os.rename(args.checkpoint_dir / 'checkpoint.pth', args.checkpoint_dir / f'checkpoint_{epoch}')
+            if (args.checkpoint_dir / 'checkpoint.pth').is_file():
+                os.rename(args.checkpoint_dir / 'checkpoint.pth', args.checkpoint_dir / f'checkpoint_{epoch}')
             torch.save(state, args.checkpoint_dir / 'checkpoint.pth')
 
     if args.rank == 0:
