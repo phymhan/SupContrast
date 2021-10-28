@@ -60,13 +60,14 @@ def main():
 
 def main_worker(gpu, args):
     #wandb.init(project=args.name)
+    args.rank += gpu
+
     if args.rank == 0:
         try:
             tb_logger = SummaryWriter(args.log_dir + args.name)
         except:
             tb_logger = SummaryWriter(args.log_dir + args.name + '1')
-
-    args.rank += gpu
+            
     torch.distributed.init_process_group(
         backend='nccl', init_method=args.dist_url,
         world_size=args.world_size, rank=args.rank)
