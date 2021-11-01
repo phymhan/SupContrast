@@ -230,10 +230,12 @@ def infoNCE(z1, z2, temperature=0.1):
     return loss
 
 def supcon_loss(z1, z2, labels, neg_features=None, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
-    features1 = gather_from_all(z1)
-    features2 = gather_from_all(z2)
+    # features1 = gather_from_all(z1)
+    # features2 = gather_from_all(z2)
     neg_features = gather_from_all(neg_features)
-    labels = gather_from_all(labels)
+    # labels = gather_from_all(labels)
+    features1 = z1
+    features2 = z2
 
     features1 = torch.nn.functional.normalize(features1, dim=1)
     features2 = torch.nn.functional.normalize(features2, dim=1)
