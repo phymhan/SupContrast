@@ -31,7 +31,7 @@ def load_top5(args):
 def main_worker(args):
     init_distributed_mode(args)
 
-    device = torch.device(args.device)
+    device = torch.device('cuda')
 
     # fix the seed for reproducibility
     seed = args.seed + get_rank()
