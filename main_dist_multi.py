@@ -34,6 +34,7 @@ parser.add_argument('--checkpoint-dir', default='/anonymous/', type=Path,
 parser.add_argument('--log-dir', type=str, default='./logs/')
 parser.add_argument('--top5-path', type=str, default='./imagenet_top5.pkl')
 parser.add_argument('--name', type=str, default='test')
+parser.add_argument('--seed', type=int, default=21)
 
 # submitit parameters
 parser.add_argument('--ngpus', default=6, type=int,

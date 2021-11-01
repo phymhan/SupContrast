@@ -15,7 +15,7 @@ python \
       --data /gpfs/u/locker/200/CADS/datasets/ImageNet/train/ \
       --workers 16 \
       --nodes 2 \
-      --ngpus 6 \ 
+      --ngpus 6 \
       --epochs 800 \
       --batch-size 768 \
       --learning-rate 1.2 \
