@@ -74,7 +74,7 @@ class Trainer(object):
         import os
         import submitit
 
-        self.args.dist_url = get_init_file().as_uri()
+        self.args.dist_url = get_init_file(args).as_uri()
         checkpoint_file = os.path.join(self.args.output_dir, "checkpoint.pth")
         if os.path.exists(checkpoint_file):
             self.args.resume = checkpoint_file
@@ -116,7 +116,7 @@ def main():
     timeout_min = args.timeout
     partition = args.partition
 
-    kwargs = {}
+    kwargs = {'slurm_gres': f'gpu:{num_gpus_per_node}',}
 
     executor.update_parameters(
         mem_gb=40 * num_gpus_per_node,
@@ -133,7 +133,7 @@ def main():
 
     executor.update_parameters(name=args.name)
 
-    args.dist_url = get_init_file().as_uri()
+    args.dist_url = get_init_file(args).as_uri()
     args.output_dir = args.job_dir
 
     trainer = Trainer(args)
