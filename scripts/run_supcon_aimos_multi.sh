@@ -24,7 +24,7 @@ python \
       --checkpoint-dir $HOME2/scratch/top5/SupContrast/results/ \
       --log-dir $HOME2/scratch/SupContrast/logs/ \
       --top5-path $HOME2/scratch/top5/SupContrast/imagenet_top5.pkl \
-      --name supcon-negboost-imagenet
+      --name supcon-negboost-imagenet-multi
 
 echo "Run completed at:- "
 date
