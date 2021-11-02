@@ -187,10 +187,10 @@ class SimCLR(nn.Module):
         layers = []
         for i in range(len(sizes) - 2):
             layers.append(nn.Linear(sizes[i], sizes[i + 1], bias=False))
-            layers.append(nn.BatchNorm1d(sizes[i + 1]))
+            # layers.append(nn.BatchNorm1d(sizes[i + 1]))
             layers.append(nn.ReLU(inplace=True))
         layers.append(nn.Linear(sizes[-2], sizes[-1], bias=False))
-        layers.append(nn.BatchNorm1d(sizes[-1]))
+        # layers.append(nn.BatchNorm1d(sizes[-1]))
         self.projector = nn.Sequential(*layers)
 
         self.onne_head = nn.Linear(2048, 1000)
@@ -237,9 +237,9 @@ def supcon_loss(z1, z2, labels, neg_features=None, mask=None, temperature=0.1, b
     # features1 = z1
     # features2 = z2
 
-    features1 = torch.nn.functional.normalize(features1, dim=1)
-    features2 = torch.nn.functional.normalize(features2, dim=1)
-    neg_features = torch.nn.functional.normalize(neg_features, dim=1)
+    # features1 = torch.nn.functional.normalize(features1, dim=1)
+    # features2 = torch.nn.functional.normalize(features2, dim=1)
+    # neg_features = torch.nn.functional.normalize(neg_features, dim=1)
 
     device = (torch.device('cuda')
                 if features1.is_cuda
@@ -278,8 +278,8 @@ def supcon_loss(z1, z2, labels, neg_features=None, mask=None, temperature=0.1, b
         torch.matmul(anchor_feature, contrast_feature.T),
         temperature)
     # for numerical stability
-    #logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
-    logits = anchor_dot_contrast #- logits_max.detach()
+    logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
+    logits = anchor_dot_contrast - logits_max.detach()
 
     if neg_features is not None:
         logits, neg_logits = torch.split(logits, [anchor_feature.shape[0], neg_features.shape[0]], dim=-1)
