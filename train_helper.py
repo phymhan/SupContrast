@@ -113,14 +113,16 @@ def main_worker(args):
                 loss, acc = model.forward(y1, y2, labels=labels)
                 # loss, acc = model.forward(y1, y2, neg_images, labels)
 
+
+            
+            scaler.scale(loss).backward()
+
             print_idx = 0
             for p in model.parameters():
                 print_idx += 1
                 _logger.info('grads {}'.format(p.grad))
                 if print_idx > 10:
                     break
-            
-            scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
             itr_end = time.time()
