@@ -47,8 +47,8 @@ def main_worker(args):
         except:
             tb_logger = SummaryWriter(args.log_dir + args.name + '1')
 
-    _logger.info('Loading top5 dict')
-    top5_dict = load_top5(args)
+    # _logger.info('Loading top5 dict')
+    # top5_dict = load_top5(args)
 
     num_tasks = get_world_size()
     global_rank = get_rank()
