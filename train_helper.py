@@ -110,7 +110,7 @@ def main_worker(args):
             lr = adjust_learning_rate(args, optimizer, loader, step)
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
-                loss, acc = model.forward(y1, y2)
+                loss, acc = model.forward(y1, y2, labels=labels)
                 # loss, acc = model.forward(y1, y2, neg_images, labels)
 
             print_idx = 0
