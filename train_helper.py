@@ -100,17 +100,18 @@ def main_worker(args):
             y2 = y2.to(device, non_blocking=True)
 
             # Get aggregate top 5 samples
-            top5 = torch.cat([top5_dict[int(i)] for i in idxs])
-            top5 = torch.unique(top5)
-            # Sampling (batch_size - 1) number of negative samples
-            neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=idxs.shape[0]-1)
-            neg_images = neg_images.to(device, non_blocking=True)
+            # top5 = torch.cat([top5_dict[int(i)] for i in idxs])
+            # top5 = torch.unique(top5)
+            # # Sampling (batch_size - 1) number of negative samples
+            # neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=idxs.shape[0]-1)
+            # neg_images = neg_images.to(device, non_blocking=True)
             
 
             lr = adjust_learning_rate(args, optimizer, loader, step)
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
-                loss, acc = model.forward(y1, y2, neg_images, labels)
+                loss, acc = model.forward(y1, y2)
+                # loss, acc = model.forward(y1, y2, neg_images, labels)
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -187,26 +188,32 @@ class SimCLR(nn.Module):
         layers = []
         for i in range(len(sizes) - 2):
             layers.append(nn.Linear(sizes[i], sizes[i + 1], bias=False))
-            # layers.append(nn.BatchNorm1d(sizes[i + 1]))
+            layers.append(nn.BatchNorm1d(sizes[i + 1]))
             layers.append(nn.ReLU(inplace=True))
         layers.append(nn.Linear(sizes[-2], sizes[-1], bias=False))
-        # layers.append(nn.BatchNorm1d(sizes[-1]))
+        layers.append(nn.BatchNorm1d(sizes[-1]))
         self.projector = nn.Sequential(*layers)
 
         self.onne_head = nn.Linear(2048, 1000)
         self.loss_fn = supcon_loss
 
-    def forward(self, y1, y2, neg_images, labels):
+    def forward(self, y1, y2, neg_images=None, labels=None):
         r1 = self.backbone(y1)
         r2 = self.backbone(y2)
-        r3 = self.backbone(neg_images)
+        if neg_images:
+            r3 = self.backbone(neg_images)
 
         # projection
         z1 = self.projector(r1)
         z2 = self.projector(r2)
-        z3 = self.projector(r3)
+        
+        if neg_images:
+            z3 = self.projector(r3)
 
-        loss = self.loss_fn(z1, z2, labels, neg_features=z3)
+        if neg_images:
+            loss = self.loss_fn(z1, z2, labels, neg_features=z3)
+        else:
+            loss = self.loss_fn(z1, z2)
 
         logits = self.onne_head(r1.detach())
         cls_loss = torch.nn.functional.cross_entropy(logits, labels)
@@ -230,16 +237,14 @@ def infoNCE(z1, z2, temperature=0.1):
     return loss
 
 def supcon_loss(z1, z2, labels, neg_features=None, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
-    features1 = gather_from_all(z1)
-    features2 = gather_from_all(z2)
+    features1 = torch.nn.functional.normalize(z1, dim=1)
+    features2 = torch.nn.functional.normalize(z2, dim=1)
+    neg_features = torch.nn.functional.normalize(neg_features, dim=1)
+
+    features1 = gather_from_all(features1)
+    features2 = gather_from_all(features2)
     neg_features = gather_from_all(neg_features)
     labels = gather_from_all(labels)
-    # features1 = z1
-    # features2 = z2
-
-    # features1 = torch.nn.functional.normalize(features1, dim=1)
-    # features2 = torch.nn.functional.normalize(features2, dim=1)
-    # neg_features = torch.nn.functional.normalize(neg_features, dim=1)
 
     device = (torch.device('cuda')
                 if features1.is_cuda
@@ -278,8 +283,8 @@ def supcon_loss(z1, z2, labels, neg_features=None, mask=None, temperature=0.1, b
         torch.matmul(anchor_feature, contrast_feature.T),
         temperature)
     # for numerical stability
-    logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
-    logits = anchor_dot_contrast - logits_max.detach()
+    # logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
+    logits = anchor_dot_contrast #- logits_max.detach()
 
     if neg_features is not None:
         logits, neg_logits = torch.split(logits, [anchor_feature.shape[0], neg_features.shape[0]], dim=-1)
