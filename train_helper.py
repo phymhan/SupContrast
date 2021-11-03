@@ -54,7 +54,9 @@ def main_worker(args):
     global_rank = get_rank()
 
     _logger.info('Creating dataset')
-    dataset = ConcatDataset((torchvision.datasets.ImageFolder(args.data, Transform(args)), torchvision.datasets.ImageFolder(args.data, Transform(args))))
+    dataset1 = torchvision.datasets.ImageFolder(args.data, Transform(args))
+    dataset2 = torchvision.datasets.ImageFolder(args.data, Transform(args))
+    dataset = ConcatDataset([dataset1, dataset2])
     sampler = torch.utils.data.distributed.DistributedSampler(dataset, num_replicas=num_tasks, rank=global_rank, drop_last=True)
     assert args.batch_size % args.world_size == 0
     per_device_batch_size = args.batch_size // args.world_size
