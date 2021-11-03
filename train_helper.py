@@ -5,7 +5,6 @@ import time
 import math
 import random
 import json
-from SupContrast.dataset import ConcatDataset
 
 import torch
 from torch import nn, optim
@@ -17,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
 
-from dataset import IdxDataset, ClassDataset
+from dataset import IdxDataset, ClassDataset, ConcatDataset
 from dist_utils import gather_from_all, init_distributed_mode, get_rank, is_main_process, get_world_size
 
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
