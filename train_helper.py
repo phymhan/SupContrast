@@ -113,6 +113,13 @@ def main_worker(args):
                 loss, acc = model.forward(y1, y2)
                 # loss, acc = model.forward(y1, y2, neg_images, labels)
 
+            print_idx = 0
+            for p in model.parameters():
+                print_idx += 1
+                _logger.info('grads {}'.format(p.grad))
+                if print_idx > 10:
+                    break
+            
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -239,12 +246,16 @@ def infoNCE(z1, z2, temperature=0.1):
 def supcon_loss(z1, z2, labels, neg_features=None, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
     features1 = torch.nn.functional.normalize(z1, dim=1)
     features2 = torch.nn.functional.normalize(z2, dim=1)
-    neg_features = torch.nn.functional.normalize(neg_features, dim=1)
+
+    if neg_features:
+        neg_features = torch.nn.functional.normalize(neg_features, dim=1)
 
     features1 = gather_from_all(features1)
     features2 = gather_from_all(features2)
-    neg_features = gather_from_all(neg_features)
-    labels = gather_from_all(labels)
+    
+    if neg_features:
+        neg_features = gather_from_all(neg_features)
+        labels = gather_from_all(labels)
 
     device = (torch.device('cuda')
                 if features1.is_cuda
