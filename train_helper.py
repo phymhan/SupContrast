@@ -5,6 +5,7 @@ import time
 import math
 import random
 import json
+from SupContrast.dataset import ConcatDataset
 
 import torch
 from torch import nn, optim
@@ -54,8 +55,7 @@ def main_worker(args):
     global_rank = get_rank()
 
     _logger.info('Creating dataset')
-    dataset = IdxDataset('imagenet', args.data, Transform(args))
-    neg_dataset = ClassDataset('imagenet', args.data, transform=Transform(args), is_train=True)
+    dataset = ConcatDataset('imagenet', args.data, Transform(args))
     sampler = torch.utils.data.distributed.DistributedSampler(dataset, num_replicas=num_tasks, rank=global_rank, drop_last=True)
     assert args.batch_size % args.world_size == 0
     per_device_batch_size = args.batch_size // args.world_size
@@ -94,10 +94,12 @@ def main_worker(args):
         _logger.info(f'Starting training epoch {epoch}')
         sampler.set_epoch(epoch)
 
-        for step, ((y1, y2), labels, idxs) in enumerate(loader, start=epoch * len(loader)):
+        for step, ((y1, labels), (y2, _)) in enumerate(loader, start=epoch * len(loader)):
             itr_start = time.time()
             y1 = y1.to(device, non_blocking=True)
             y2 = y2.to(device, non_blocking=True)
+
+            y1_1, y1_2 = torch.split(y1, [y1.shape[0]//2, y1.shape[0]//2], dim=0)
 
             # Get aggregate top 5 samples
             # top5 = torch.cat([top5_dict[int(i)] for i in idxs])
@@ -110,19 +112,10 @@ def main_worker(args):
             lr = adjust_learning_rate(args, optimizer, loader, step)
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
-                loss, acc = model.forward(y1, y2, labels=labels)
-                # loss, acc = model.forward(y1, y2, neg_images, labels)
-
-
+                # loss, acc = model.forward(y1, y2, labels=labels)
+                loss, acc = model.forward(y1_1, y1_2, neg_images=y2, labels=labels)
             
             scaler.scale(loss).backward()
-
-            print_idx = 0
-            for p in model.parameters():
-                print_idx += 1
-                _logger.info('grads {}'.format(p.grad))
-                if print_idx > 10:
-                    break
             scaler.step(optimizer)
             scaler.update()
             itr_end = time.time()
