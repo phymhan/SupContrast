@@ -243,7 +243,7 @@ def infoNCE(z1, z2, temperature=0.1):
     loss = torch.nn.functional.cross_entropy(logits, labels)
     return loss
 
-def supcon_loss(z1, z2, labels, neg_features=None, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
+def supcon_loss(z1, z2, labels=None, neg_features=None, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
     features1 = torch.nn.functional.normalize(z1, dim=1)
     features2 = torch.nn.functional.normalize(z2, dim=1)
 
