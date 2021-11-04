@@ -260,7 +260,7 @@ def get_top5(opt):
     
     # building a dict of index => top 5 predicted labels without the ground truth
     with torch.no_grad():
-        for idx, (images, labels, idxs) in enumerate(tqdm(train_loader)):
+        for _, (images, labels, idxs) in enumerate(tqdm(train_loader)):
             outputs = model(images.cuda())
             preds_top5 = torch.topk(outputs.cpu(), 5)[1]
             
