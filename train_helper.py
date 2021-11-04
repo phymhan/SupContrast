@@ -97,7 +97,7 @@ def main_worker(args):
     for epoch in range(start_epoch, args.epochs):
         _logger.info(f'Starting training epoch {epoch}')
         sampler1.set_epoch(epoch)
-        sampler2.set_epoch(epoch)
+        sampler2.set_epoch(epoch+800)
 
         for step, ((y1, y2), labels) in enumerate(loader, start=epoch * len(loader)):
             itr_start = time.time()
