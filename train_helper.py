@@ -100,29 +100,19 @@ def main_worker(args):
             y2 = y2.to(device, non_blocking=True)
 
             # Get aggregate top 5 samples
-            # top5 = torch.cat([top5_dict[int(i)] for i in idxs])
-            # top5 = torch.unique(top5)
-            # # Sampling (batch_size - 1) number of negative samples
-            # neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=idxs.shape[0]-1)
-            # neg_images = neg_images.to(device, non_blocking=True)
+            top5 = torch.cat([top5_dict[int(i)] for i in idxs])
+            top5 = torch.unique(top5)
+            _logger.info('Top 5 classes union: {}'.format(len(top5)))
+            # Sampling (batch_size - 1) number of negative samples
+            neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=idxs.shape[0]-1)
+            neg_images = neg_images.to(device, non_blocking=True)
             
-
             lr = adjust_learning_rate(args, optimizer, loader, step)
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
-                loss, acc = model.forward(y1, y2, labels=labels)
-                # loss, acc = model.forward(y1, y2, neg_images, labels)
+                loss, acc = model.forward(y1, y2, neg_images, labels)
 
-
-            
             scaler.scale(loss).backward()
-
-            print_idx = 0
-            for p in model.parameters():
-                print_idx += 1
-                _logger.info('grads {}'.format(p.grad))
-                if print_idx > 10:
-                    break
             scaler.step(optimizer)
             scaler.update()
             itr_end = time.time()
@@ -209,17 +199,17 @@ class SimCLR(nn.Module):
     def forward(self, y1, y2, neg_images=None, labels=None):
         r1 = self.backbone(y1)
         r2 = self.backbone(y2)
-        if neg_images:
+        if neg_images is not None:
             r3 = self.backbone(neg_images)
 
         # projection
         z1 = self.projector(r1)
         z2 = self.projector(r2)
         
-        if neg_images:
+        if neg_images is not None:
             z3 = self.projector(r3)
 
-        if neg_images:
+        if neg_images is not None:
             loss = self.loss_fn(z1, z2, labels, neg_features=z3)
         else:
             loss = self.loss_fn(z1, z2)
@@ -249,13 +239,13 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, mask=None, temperature=0
     features1 = torch.nn.functional.normalize(z1, dim=1)
     features2 = torch.nn.functional.normalize(z2, dim=1)
 
-    if neg_features:
+    if neg_features is not None:
         neg_features = torch.nn.functional.normalize(neg_features, dim=1)
 
     features1 = gather_from_all(features1)
     features2 = gather_from_all(features2)
     
-    if neg_features:
+    if neg_features is not None:
         neg_features = gather_from_all(neg_features)
         labels = gather_from_all(labels)
 
