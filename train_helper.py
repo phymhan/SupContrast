@@ -56,13 +56,16 @@ def main_worker(args):
     _logger.info('Creating dataset')
     dataset1 = torchvision.datasets.ImageFolder(args.data, Transform(args))
     dataset2 = torchvision.datasets.ImageFolder(args.data, Transform(args))
-    dataset = ConcatDataset([dataset1, dataset2])
-    sampler = torch.utils.data.distributed.DistributedSampler(dataset, num_replicas=num_tasks, rank=global_rank, drop_last=True)
+    sampler1 = torch.utils.data.distributed.DistributedSampler(dataset1, num_replicas=num_tasks, rank=global_rank, drop_last=True)
+    sampler2 = torch.utils.data.distributed.DistributedSampler(dataset2, num_replicas=num_tasks, rank=global_rank, drop_last=True)
     assert args.batch_size % args.world_size == 0
     per_device_batch_size = args.batch_size // args.world_size
     loader = torch.utils.data.DataLoader(
-        dataset, batch_size=per_device_batch_size, num_workers=args.workers,
-        pin_memory=True, sampler=sampler, drop_last=True)
+        dataset1, batch_size=per_device_batch_size, num_workers=args.workers,
+        pin_memory=True, sampler=sampler1, drop_last=True)
+    loader2 = torch.utils.data.DataLoader(
+        dataset2, batch_size=per_device_batch_size, num_workers=args.workers,
+        pin_memory=True, sampler=sampler2, drop_last=True)
 
 
     _logger.info('Creating model')
@@ -86,21 +89,30 @@ def main_worker(args):
     else:
         start_epoch = 0
 
-
+    randbatch_itr = iter(loader2)
     start_time = time.time()
     scaler = torch.cuda.amp.GradScaler()
 
     _logger.info('Starting training')
     for epoch in range(start_epoch, args.epochs):
         _logger.info(f'Starting training epoch {epoch}')
-        sampler.set_epoch(epoch)
+        sampler1.set_epoch(epoch)
+        sampler2.set_epoch(epoch)
 
-        for step, ((y1, labels), (y2, _)) in enumerate(loader, start=epoch * len(loader)):
+        for step, ((y1, y2), labels) in enumerate(loader, start=epoch * len(loader)):
             itr_start = time.time()
             y1 = y1.to(device, non_blocking=True)
             y2 = y2.to(device, non_blocking=True)
 
-            y1_1, y1_2 = torch.split(y1, [y1.shape[0]//2, y1.shape[0]//2], dim=0)
+            try: 
+                (neg_y1, neg_y2), neg_labels = next(randbatch_itr)
+                assert (labels != neg_labels).all()
+            except:
+                randbatch_itr = iter(loader2)
+                (neg_y1, neg_y2), neg_labels = next(randbatch_itr)
+                assert (labels != neg_labels).all()
+            
+            neg_y = torch.cat([neg_y1, neg_y2], dim=0).to(device, non_blocking=True)
 
             # Get aggregate top 5 samples
             # top5 = torch.cat([top5_dict[int(i)] for i in idxs])
@@ -114,7 +126,7 @@ def main_worker(args):
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
                 # loss, acc = model.forward(y1, y2, labels=labels)
-                loss, acc = model.forward(y1_1, y1_2, neg_images=y2, labels=labels)
+                loss, acc = model.forward(y1, y2, neg_images=neg_y, labels=labels)
             
             scaler.scale(loss).backward()
             scaler.step(optimizer)
