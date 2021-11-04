@@ -89,6 +89,7 @@ def main_worker(args):
     else:
         start_epoch = 0
 
+    sampler2.set_epoch(800)
     randbatch_itr = iter(loader2)
     start_time = time.time()
     scaler = torch.cuda.amp.GradScaler()
@@ -97,7 +98,7 @@ def main_worker(args):
     for epoch in range(start_epoch, args.epochs):
         _logger.info(f'Starting training epoch {epoch}')
         sampler1.set_epoch(epoch)
-        sampler2.set_epoch(epoch+800)
+        
 
         for step, ((y1, y2), labels) in enumerate(loader, start=epoch * len(loader)):
             itr_start = time.time()
@@ -107,6 +108,7 @@ def main_worker(args):
             try: 
                 (neg_y1, neg_y2), neg_labels = next(randbatch_itr)
             except:
+                sampler2.set_epoch(epoch+800)
                 randbatch_itr = iter(loader2)
                 (neg_y1, neg_y2), neg_labels = next(randbatch_itr)
             
