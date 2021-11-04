@@ -106,11 +106,11 @@ def main_worker(args):
 
             try: 
                 (neg_y1, neg_y2), neg_labels = next(randbatch_itr)
-                assert (labels != neg_labels).all()
             except:
                 randbatch_itr = iter(loader2)
                 (neg_y1, neg_y2), neg_labels = next(randbatch_itr)
-                assert (labels != neg_labels).all()
+            
+            assert (labels != neg_labels).any()
             
             neg_y = torch.cat([neg_y1, neg_y2], dim=0).to(device, non_blocking=True)
 
