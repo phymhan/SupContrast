@@ -217,17 +217,17 @@ class SimCLR(nn.Module):
     def forward(self, y1, y2, neg_images=None, labels=None):
         r1 = self.backbone(y1)
         r2 = self.backbone(y2)
-        if neg_images:
+        if neg_images is not None:
             r3 = self.backbone(neg_images)
 
         # projection
         z1 = self.projector(r1)
         z2 = self.projector(r2)
         
-        if neg_images:
+        if neg_images is not None:
             z3 = self.projector(r3)
 
-        if neg_images:
+        if neg_images is not None:
             loss = self.loss_fn(z1, z2, labels, neg_features=z3)
         else:
             loss = self.loss_fn(z1, z2)
@@ -257,13 +257,13 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, mask=None, temperature=0
     features1 = torch.nn.functional.normalize(z1, dim=1)
     features2 = torch.nn.functional.normalize(z2, dim=1)
 
-    if neg_features:
+    if neg_features is not None:
         neg_features = torch.nn.functional.normalize(neg_features, dim=1)
 
     features1 = gather_from_all(features1)
     features2 = gather_from_all(features2)
     
-    if neg_features:
+    if neg_features is not None:
         neg_features = gather_from_all(neg_features)
         labels = gather_from_all(labels)
 
