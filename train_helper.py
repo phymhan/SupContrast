@@ -262,10 +262,11 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, mask=No
 
     features1 = gather_from_all(features1)
     features2 = gather_from_all(features2)
-    
+    labels = gather_from_all(labels)
+
     if neg_features is not None:
         neg_features = gather_from_all(neg_features)
-        labels = gather_from_all(labels)
+        neg_labels = gather_from_all(neg_labels)
 
     device = (torch.device('cuda')
                 if features1.is_cuda
