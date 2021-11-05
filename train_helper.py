@@ -128,7 +128,7 @@ def main_worker(args):
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
                 # loss, acc = model.forward(y1, y2, labels=labels)
-                loss, acc = model.forward(y1, y2, neg_images=neg_y, labels=labels)
+                loss, acc = model.forward(y1, y2, neg_images=neg_y, labels=labels, neg_labels=neg_labels)
             
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -214,7 +214,7 @@ class SimCLR(nn.Module):
         self.onne_head = nn.Linear(2048, 1000)
         self.loss_fn = supcon_loss
 
-    def forward(self, y1, y2, neg_images=None, labels=None):
+    def forward(self, y1, y2, neg_images=None, labels=None, neg_labels=None):
         r1 = self.backbone(y1)
         r2 = self.backbone(y2)
         if neg_images is not None:
@@ -228,7 +228,7 @@ class SimCLR(nn.Module):
             z3 = self.projector(r3)
 
         if neg_images is not None:
-            loss = self.loss_fn(z1, z2, labels, neg_features=z3)
+            loss = self.loss_fn(z1, z2, labels, neg_features=z3, neg_labels=neg_labels)
         else:
             loss = self.loss_fn(z1, z2)
 
@@ -253,7 +253,7 @@ def infoNCE(z1, z2, temperature=0.1):
     loss = torch.nn.functional.cross_entropy(logits, labels)
     return loss
 
-def supcon_loss(z1, z2, labels=None, neg_features=None, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
+def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
     features1 = torch.nn.functional.normalize(z1, dim=1)
     features2 = torch.nn.functional.normalize(z2, dim=1)
 
@@ -272,6 +272,7 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, mask=None, temperature=0
                 else torch.device('cpu'))
 
     batch_size = features1.shape[0]
+    neg_mask = None
     if labels is not None and mask is not None:
         raise ValueError('Cannot define both `labels` and `mask`')
     elif labels is None and mask is None:
@@ -281,6 +282,9 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, mask=None, temperature=0
         if labels.shape[0] != batch_size:
             raise ValueError('Num of labels does not match num of features')
         mask = torch.eq(labels, labels.T).float().to(device)
+
+        if neg_features is not None:
+            neg_mask = torch.eq(labels, neg_labels.T).float().to(device) # mask for positives with respect to the anchor in the negatives
     else:
         mask = mask.float().to(device)
 
@@ -312,6 +316,9 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, mask=None, temperature=0
 
     # tile mask
     mask = mask.repeat(anchor_count, contrast_count)
+    if neg_mask is not None:
+        neg_mask = neg_mask.repeat(anchor_count, contrast_count)
+
     # mask-out self-contrast cases
     logits_mask = torch.scatter(
         torch.ones_like(mask),
@@ -332,9 +339,15 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, mask=None, temperature=0
     
     # Adding numerator to denominator for normalization
     log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True) + torch.exp(logits))
+    # Collisions in negatives with the anchor
+    if neg_mask is not None:
+        neg_log_prob = neg_logits - torch.log(exp_logits.sum(1, keepdim=True))
     
     # compute mean of log-likelihood over positive
-    mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
+    if neg_mask is None:
+        mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
+    else:
+        mean_log_prob_pos = ((mask * log_prob).sum(1) + (neg_mask * neg_log_prob).sum(1)) / (mask.sum(1) + neg_mask.sum(1))
 
     # loss
     loss = - (temperature / base_temperature) * mean_log_prob_pos
