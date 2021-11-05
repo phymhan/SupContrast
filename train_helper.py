@@ -70,6 +70,7 @@ def main_worker(args):
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
     model_without_ddp = model.module
 
+    # TODO: change optimizer?
     optimizer = LARS(model.parameters(), lr=0, weight_decay=args.weight_decay,
                      weight_decay_filter=exclude_bias_and_norm,
                      lars_adaptation_filter=exclude_bias_and_norm)
@@ -112,6 +113,7 @@ def main_worker(args):
             with torch.cuda.amp.autocast():
                 loss, acc = model.forward(y1, y2, neg_images, labels)
 
+            # TODO: monitor this, gradients
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -305,14 +307,14 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, mask=None, temperature=0
 
     # compute log_prob
     if neg_features is not None:
-        # use separate negatives provided
+        # use separate negatives provided # TODO: mask exp_logits based on the positive labels vs. negative labels
         exp_logits = torch.exp(neg_logits)
         
     else:
         # use negatives within batch
         exp_logits = torch.exp(logits) * logits_mask
     
-    # Adding numerator to denominator for normalization
+    # Adding numerator to denominator for normalization 
     log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True) + torch.exp(logits))
     
     # compute mean of log-likelihood over positive
