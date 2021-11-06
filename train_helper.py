@@ -266,7 +266,7 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, mask=No
 
     if neg_features is not None:
         neg_features = gather_from_all(neg_features)
-        neg_labels = gather_from_all(neg_labels)
+        neg_labels = gather_from_all(neg_labels)    
 
     device = (torch.device('cuda')
                 if features1.is_cuda
@@ -285,7 +285,7 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, mask=No
         mask = torch.eq(labels, labels.T).float().to(device)
 
         if neg_features is not None:
-            neg_mask = torch.eq(labels, neg_labels.T).float().to(device) # mask for positives with respect to the anchor in the negatives
+            neg_mask = (~torch.eq(labels, neg_labels.T)).float().to(device) # mask for positives with respect to the anchor in the negatives
     else:
         mask = mask.float().to(device)
 
@@ -332,7 +332,7 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, mask=No
     # compute log_prob
     if neg_features is not None:
         # use separate negatives provided
-        exp_logits = torch.exp(neg_logits)
+        exp_logits = torch.exp(neg_logits) * neg_mask
         
     else:
         # use negatives within batch
@@ -341,15 +341,16 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, mask=No
     # Adding numerator to denominator for normalization
     log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True) + torch.exp(logits))
     # Collisions in negatives with the anchor
-    if neg_mask is not None:
-        neg_log_prob = neg_logits - torch.log(exp_logits.sum(1, keepdim=True))
+    # if neg_mask is not None:
+        # neg_log_prob = neg_logits - torch.log(exp_logits.sum(1, keepdim=True))
     
     # compute mean of log-likelihood over positive
-    if neg_mask is None:
-        mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
-    else:
-        mean_log_prob_pos = ((mask * log_prob).sum(1) + (neg_mask * neg_log_prob).sum(1)) / (mask.sum(1) + neg_mask.sum(1))
+    # if neg_mask is None:
+        # mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
+    # else:
+        # mean_log_prob_pos = ((mask * log_prob).sum(1) + (neg_mask * neg_log_prob).sum(1)) / (mask.sum(1) + neg_mask.sum(1))
 
+    mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
     # loss
     loss = - (temperature / base_temperature) * mean_log_prob_pos
     loss = loss.view(anchor_count, batch_size).mean()
