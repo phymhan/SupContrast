@@ -47,25 +47,34 @@ def main_worker(args):
         except:
             tb_logger = SummaryWriter(args.log_dir + args.name + '1')
 
-    # _logger.info('Loading top5 dict')
-    # top5_dict = load_top5(args)
+    _logger.info('Loading top5 dict')
+    top5_dict = load_top5(args)
 
     num_tasks = get_world_size()
     global_rank = get_rank()
 
     _logger.info('Creating dataset')
-    dataset1 = torchvision.datasets.ImageFolder(args.data, Transform(args))
-    dataset2 = torchvision.datasets.ImageFolder(args.data, Transform(args))
-    sampler1 = torch.utils.data.distributed.DistributedSampler(dataset1, num_replicas=num_tasks, rank=global_rank, drop_last=True)
-    sampler2 = torch.utils.data.distributed.DistributedSampler(dataset2, num_replicas=num_tasks, rank=global_rank, drop_last=True)
+    dataset = IdxDataset('imagenet', args.data, Transform(args))
+    sampler = torch.utils.data.distributed.DistributedSampler(dataset, drop_last=False)
     assert args.batch_size % args.world_size == 0
     per_device_batch_size = args.batch_size // args.world_size
     loader = torch.utils.data.DataLoader(
-        dataset1, batch_size=per_device_batch_size, num_workers=args.workers,
-        pin_memory=True, sampler=sampler1, drop_last=True)
-    loader2 = torch.utils.data.DataLoader(
-        dataset2, batch_size=per_device_batch_size, num_workers=args.workers,
-        pin_memory=True, sampler=sampler2, drop_last=True)
+        dataset, batch_size=per_device_batch_size, num_workers=args.workers,
+        pin_memory=True, sampler=sampler)
+
+    sampler.set_epoch(0)
+    # dataset1 = torchvision.datasets.ImageFolder(args.data, Transform(args))
+    # dataset2 = torchvision.datasets.ImageFolder(args.data, Transform(args))
+    # sampler1 = torch.utils.data.distributed.DistributedSampler(dataset1, num_replicas=num_tasks, rank=global_rank, drop_last=True)
+    # sampler2 = torch.utils.data.distributed.DistributedSampler(dataset2, num_replicas=num_tasks, rank=global_rank, drop_last=True)
+    # assert args.batch_size % args.world_size == 0
+    # per_device_batch_size = args.batch_size // args.world_size
+    # loader = torch.utils.data.DataLoader(
+    #     dataset1, batch_size=per_device_batch_size, num_workers=args.workers,
+    #     pin_memory=True, sampler=sampler1, drop_last=True)
+    # loader2 = torch.utils.data.DataLoader(
+    #     dataset2, batch_size=per_device_batch_size, num_workers=args.workers,
+    #     pin_memory=True, sampler=sampler2, drop_last=True)
 
 
     _logger.info('Creating model')
@@ -89,46 +98,29 @@ def main_worker(args):
     else:
         start_epoch = 0
 
-    sampler2.set_epoch(800)
-    randbatch_itr = iter(loader2)
     start_time = time.time()
     scaler = torch.cuda.amp.GradScaler()
 
     _logger.info('Starting training')
     for epoch in range(start_epoch, args.epochs):
         _logger.info(f'Starting training epoch {epoch}')
-        sampler1.set_epoch(epoch)
+        sampler.set_epoch(epoch)
         
-
-        for step, ((y1, y2), labels) in enumerate(loader, start=epoch * len(loader)):
+        for step, ((y1, y2), labels, idxs) in enumerate(loader, start=epoch * len(loader)):
             itr_start = time.time()
             y1 = y1.to(device, non_blocking=True)
             y2 = y2.to(device, non_blocking=True)
-
-            try: 
-                (neg_y1, neg_y2), neg_labels = next(randbatch_itr)
-            except:
-                sampler2.set_epoch(epoch+800)
-                randbatch_itr = iter(loader2)
-                (neg_y1, neg_y2), neg_labels = next(randbatch_itr)
             
-            assert (labels != neg_labels).any()
-            
-            neg_y = torch.cat([neg_y1, neg_y2], dim=0).to(device, non_blocking=True)
-
-            # Get aggregate top 5 samples
-            # top5 = torch.cat([top5_dict[int(i)] for i in idxs])
-            # top5 = torch.unique(top5)
-            # # Sampling (batch_size - 1) number of negative samples
-            # neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=idxs.shape[0]-1)
-            # neg_images = neg_images.to(device, non_blocking=True)
-            
+            # Get top 5 labels for masking
+            pad = torch.nn.ConstantPad1d((0,1), -1)
+            top5_labels = [top5_dict[int(i)] if len(top5_dict[int(i)]) == 5 else pad(top5_dict[int(i)]) for i in idxs]
+            top5_labels = torch.stack(top5_labels, dim=0)
 
             lr = adjust_learning_rate(args, optimizer, loader, step)
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
-                # loss, acc = model.forward(y1, y2, labels=labels)
-                loss, acc = model.forward(y1, y2, neg_images=neg_y, labels=labels, neg_labels=neg_labels)
+                loss, acc = model.forward(y1, y2, labels=labels, top5_labels=top5_labels)
+                # loss, acc = model.forward(y1, y2, neg_images=neg_y, labels=labels, neg_labels=neg_labels)
             
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -253,27 +245,21 @@ def infoNCE(z1, z2, temperature=0.1):
     loss = torch.nn.functional.cross_entropy(logits, labels)
     return loss
 
-def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
+def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, top5_labels=None, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
     features1 = torch.nn.functional.normalize(z1, dim=1)
     features2 = torch.nn.functional.normalize(z2, dim=1)
-
-    if neg_features is not None:
-        neg_features = torch.nn.functional.normalize(neg_features, dim=1)
 
     features1 = gather_from_all(features1)
     features2 = gather_from_all(features2)
     labels = gather_from_all(labels)
-
-    if neg_features is not None:
-        neg_features = gather_from_all(neg_features)
-        neg_labels = gather_from_all(neg_labels)    
+    top5_labels = gather_from_all(top5_labels)
 
     device = (torch.device('cuda')
                 if features1.is_cuda
                 else torch.device('cpu'))
 
     batch_size = features1.shape[0]
-    neg_mask = None
+
     if labels is not None and mask is not None:
         raise ValueError('Cannot define both `labels` and `mask`')
     elif labels is None and mask is None:
@@ -284,8 +270,10 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, mask=No
             raise ValueError('Num of labels does not match num of features')
         mask = torch.eq(labels, labels.T).float().to(device)
 
-        if neg_features is not None:
-            neg_mask = (~torch.eq(labels, neg_labels.T)).float().to(device) # mask for positives with respect to the anchor in the negatives
+        if top5_labels is not None:
+            top5_mask = torch.eq(labels, top5_labels.unsqueeze(-1).permute(1,2,0))
+            top5_mask = torch.any(top5_mask, dim=0)
+
     else:
         mask = mask.float().to(device)
 
@@ -300,10 +288,6 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, mask=No
     else:
         raise ValueError('Unknown mode: {}'.format(contrast_mode))
 
-    # If negative features provided separately, add to contrast feature
-    if neg_features is not None:
-        contrast_feature = torch.cat([contrast_feature, neg_features], dim=0)
-
     # compute logits
     anchor_dot_contrast = torch.div(
         torch.matmul(anchor_feature, contrast_feature.T),
@@ -312,13 +296,8 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, mask=No
     # logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
     logits = anchor_dot_contrast #- logits_max.detach()
 
-    if neg_features is not None:
-        logits, neg_logits = torch.split(logits, [anchor_feature.shape[0], neg_features.shape[0]], dim=-1)
-
     # tile mask
     mask = mask.repeat(anchor_count, contrast_count)
-    if neg_mask is not None:
-        neg_mask = neg_mask.repeat(anchor_count, contrast_count)
 
     # mask-out self-contrast cases
     logits_mask = torch.scatter(
@@ -329,27 +308,13 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, mask=No
     )
     mask = mask * logits_mask
 
-    # compute log_prob
-    if neg_features is not None:
-        # use separate negatives provided
-        exp_logits = torch.exp(neg_logits) * neg_mask
-        
-    else:
-        # use negatives within batch
-        exp_logits = torch.exp(logits) * logits_mask
-    
-    # Adding numerator to denominator for normalization
-    log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True) + torch.exp(logits))
-    # Collisions in negatives with the anchor
-    # if neg_mask is not None:
-        # neg_log_prob = neg_logits - torch.log(exp_logits.sum(1, keepdim=True))
-    
-    # compute mean of log-likelihood over positive
-    # if neg_mask is None:
-        # mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
-    # else:
-        # mean_log_prob_pos = ((mask * log_prob).sum(1) + (neg_mask * neg_log_prob).sum(1)) / (mask.sum(1) + neg_mask.sum(1))
+    top5_mask = top5_mask * logits_mask
 
+    # compute log_prob
+    exp_logits = torch.exp(logits) * logits_mask
+    log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+
+    # compute mean of log-likelihood over positive
     mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
     # loss
     loss = - (temperature / base_temperature) * mean_log_prob_pos
