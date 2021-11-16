@@ -17,6 +17,7 @@ python \
       --nodes 4 \
       --ngpus 6 \
       --epochs 800 \
+      --topk 5 \
       --batch-size 1536 \
       --learning-rate 1.2 \
       --temp 0.1 \
