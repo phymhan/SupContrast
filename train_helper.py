@@ -100,6 +100,7 @@ def main_worker(args):
 
     start_time = time.time()
     scaler = torch.cuda.amp.GradScaler()
+    itr = start_epoch * len(loader)
 
     _logger.info('Starting training')
     for epoch in range(start_epoch, args.epochs):
@@ -108,6 +109,7 @@ def main_worker(args):
         
         for step, ((y1, y2), labels, idxs) in enumerate(loader, start=epoch * len(loader)):
             itr_start = time.time()
+            itr += 1
             y1 = y1.to(device, non_blocking=True)
             y2 = y2.to(device, non_blocking=True)
             
@@ -129,8 +131,8 @@ def main_worker(args):
             itr_time = itr_end - itr_start
             
             if is_main_process():
-                tb_logger.add_scalar('loss', loss.item())
-                tb_logger.add_scalar('acc', acc.item())
+                tb_logger.add_scalar('loss', loss.item(), itr)
+                tb_logger.add_scalar('acc', acc.item(), itr)
 
             if step % args.print_freq == 0:
                 torch.distributed.reduce(acc.div_(args.world_size), 0)
