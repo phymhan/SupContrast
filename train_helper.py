@@ -206,7 +206,7 @@ class SimCLR(nn.Module):
         self.onne_head = nn.Linear(2048, 1000)
         self.loss_fn = supcon_loss
 
-    def forward(self, y1, y2, neg_images=None, labels=None, neg_labels=None):
+    def forward(self, y1, y2, neg_images=None, labels=None, neg_labels=None, top5_labels=None):
         r1 = self.backbone(y1)
         r2 = self.backbone(y2)
         if neg_images is not None:
@@ -221,6 +221,8 @@ class SimCLR(nn.Module):
 
         if neg_images is not None:
             loss = self.loss_fn(z1, z2, labels, neg_features=z3, neg_labels=neg_labels)
+        elif top5_labels is not None:
+            loss = self.loss_fn(z1, z2, labels, top5_labels=top5_labels)
         else:
             loss = self.loss_fn(z1, z2)
 
@@ -252,7 +254,8 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, top5_la
     features1 = gather_from_all(features1)
     features2 = gather_from_all(features2)
     labels = gather_from_all(labels)
-    top5_labels = gather_from_all(top5_labels)
+    if top5_labels is not None:
+        top5_labels = gather_from_all(top5_labels)
 
     device = (torch.device('cuda')
                 if features1.is_cuda
