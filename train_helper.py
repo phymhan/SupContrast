@@ -302,6 +302,9 @@ def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, top5_la
     # tile mask
     mask = mask.repeat(anchor_count, contrast_count)
 
+    if top5_labels is not None:
+        top5_mask = top5_mask.repeat(anchor_count, contrast_count)
+
     # mask-out self-contrast cases
     logits_mask = torch.scatter(
         torch.ones_like(mask),
