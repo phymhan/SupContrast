@@ -32,7 +32,8 @@ parser.add_argument('--print-freq', default=10, type=int, metavar='N',
 parser.add_argument('--checkpoint-dir', default='/anonymous/', type=Path,
                     metavar='DIR', help='path to checkpoint directory')
 parser.add_argument('--log-dir', type=str, default='./logs/')
-parser.add_argument('--top5-path', type=str, default='./imagenet_top5.pkl')
+parser.add_argument('--top5-path', type=str, default='./imagenet_resnet50_top10.pkl')
+parser.add_argument('--topk', type=int, default=5, help='K top prediction classes to use for mask creation')
 parser.add_argument('--name', type=str, default='test')
 parser.add_argument('--seed', type=int, default=21)
 
