@@ -116,7 +116,7 @@ def main_worker(args):
             # Get top 5 labels for masking
             pad = torch.nn.ConstantPad1d((0,1), -1)
             top5_labels = [top5_dict[int(i)] if len(top5_dict[int(i)]) == 10 else pad(top5_dict[int(i)]) for i in idxs]
-            top5_labels = torch.stack(top5_labels, dim=0)[:, :args.topk]
+            top5_labels = torch.stack(top5_labels, dim=0)[:, :args.topk].clone()
 
             lr = adjust_learning_rate(args, optimizer, loader, step)
             optimizer.zero_grad()
