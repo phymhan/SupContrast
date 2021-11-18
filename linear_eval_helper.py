@@ -214,6 +214,7 @@ def validate(args, epoch, model, lin_clf, loader, sampler, device, tb_logger):
     lin_clf.eval()
     model.eval()
 
+    sampler.set_epoch(epoch)
     loss_fn = torch.nn.CrossEntropyLoss()
 
     avg_itr = AverageMeter()
