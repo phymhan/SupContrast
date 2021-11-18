@@ -11,7 +11,7 @@ conda activate $PYTHON_VIRTUAL_ENVIRONMENT
 ulimit -s unlimited
 
 python \
-      $HOME2/scratch/test/SupContrast/main_dist_multi.py \
+      $HOME2/scratch/test/SupContrast/main_dist_linear_eval_multi.py \
       --data /gpfs/u/locker/200/CADS/datasets/ImageNet/train/ \
       --test-data /gpfs/u/locker/200/CADS/datasets/ImageNet/val/ \
       --workers 16 \
