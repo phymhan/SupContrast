@@ -85,7 +85,7 @@ def main_worker(args):
     per_device_batch_size = args.batch_size // args.world_size
     test_loader = torch.utils.data.DataLoader(
         test_dataset, batch_size=per_device_batch_size, num_workers=args.workers,
-        pin_memory=True, sampler=sampler)
+        pin_memory=True, sampler=test_sampler)
 
     test_sampler.set_epoch(0)
 
