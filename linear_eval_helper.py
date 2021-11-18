@@ -152,7 +152,7 @@ def train(args, model, lin_clf, optimizer, loader, sampler, device):
             optimizer.zero_grad()
 
             with torch.no_grad():
-                features = model.forward_backbone(images)
+                features = model.module.forward_backbone(images)
 
             outputs = lin_clf(features.detach())
 
@@ -227,7 +227,7 @@ def validate(args, model, lin_clf, loader, sampler, device):
         labels = labels.to(device, non_blocking=True)
 
         with torch.no_grad():
-            features = model.forward_backbone(images)
+            features = model.module.forward_backbone(images)
             outputs = lin_clf(features.detach())
 
         outputs = gather_from_all(outputs)
