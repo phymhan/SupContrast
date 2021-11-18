@@ -128,7 +128,7 @@ def main_worker(args):
         # save final model
         _logger.info(f'Saved final checkpoint')
         torch.save(dict(classifier=lin_clf_without_ddp.state_dict()),
-                    args.checkpoint_dir + args.name + '-resnet50.pth')
+                    args.checkpoint_dir + args.name + '-linclf.pth')
 
 
 def train(args, epoch, model, lin_clf, optimizer, loader, sampler, device, tb_logger):
