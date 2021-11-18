@@ -120,7 +120,7 @@ def main_worker(args):
 
     for epoch in range(args.start_epoch, args.epochs):
         _logger.info(f'Starting training epoch {epoch}')
-        train(args, epoch, model, lin_clf, optimizer, loader, sampler, device, tb_logger)
+        # train(args, epoch, model, lin_clf, optimizer, loader, sampler, device, tb_logger)
         _logger.info('Starting linear evaluation validation')
         validate(args, epoch, model, lin_clf, test_loader, test_sampler, device, tb_logger)
 
@@ -232,8 +232,8 @@ def validate(args, epoch, model, lin_clf, loader, sampler, device, tb_logger):
         labels = labels.to(device, non_blocking=True)
 
         with torch.no_grad():
-            features = model.module.forward_backbone(images)
-            outputs = lin_clf(features.detach())
+            outputs = model.module.forward_backbone(images)
+            # outputs = lin_clf(features.detach())
 
         outputs = gather_from_all(outputs)
         labels = gather_from_all(labels)
@@ -346,7 +346,9 @@ class SimCLR(nn.Module):
         return loss, acc
     
     def forward_backbone(self, y1):
-        return self.backbone(y1)
+        z = self.backbone(y1)
+        z = self.onne_head(z)
+        return z
     
     def reset_linear_head(self):
         self.onne_head = nn.Linear(2048, 1000)
