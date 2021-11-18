@@ -213,7 +213,6 @@ def validate(args, epoch, model, lin_clf, loader, sampler, device, tb_logger):
     lin_clf.eval()
     model.eval()
 
-    lin_clf_without_ddp = lin_clf.module
     loss_fn = torch.nn.CrossEntropyLoss()
 
     avg_itr = AverageMeter()
@@ -269,8 +268,9 @@ def validate(args, epoch, model, lin_clf, loader, sampler, device, tb_logger):
     if is_main_process():
         tb_logger.add_scalar('Accuracy1/test', avg_top1.avg, epoch)
         tb_logger.add_scalar('Accuracy5/test', avg_top5.avg, epoch)
+        tb_logger.add_scalar('Loss/test', avg_loss.avg, epoch)
 
-        _logger.info(f'Test: epoch={epoch}, acc1={avg_top1.avg}, acc5={avg_top5.avg}')
+        _logger.info(f'Test: epoch={epoch}, acc1={avg_top1.avg}, acc5={avg_top5.avg}, loss={avg_loss.avg}')
 
 
 
