@@ -58,6 +58,7 @@ def main_worker(args):
 
     torch.backends.cudnn.benchmark = True
 
+    tb_logger = None
     if is_main_process():
         try:
             tb_logger = SummaryWriter(args.log_dir + args.name)
