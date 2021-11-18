@@ -201,14 +201,14 @@ def train(args, epoch, model, lin_clf, optimizer, loader, sampler, device, tb_lo
                 with open(args.checkpoint_dir / 'stats.txt', 'a') as stats_file:
                     stats_file.write(json.dumps(stats) + "\n")
 
-        if is_main_process():
-            # save checkpoint
-            _logger.info(f'Saved checkpoint {epoch}')
-            state = dict(epoch=epoch + 1, model=lin_clf_without_ddp.state_dict(),
-                         optimizer=optimizer.state_dict())
-            if (args.checkpoint_dir / 'checkpoint.pth').is_file():
-                os.rename(args.checkpoint_dir / 'checkpoint.pth', args.checkpoint_dir / f'checkpoint_{epoch}')
-            torch.save(state, args.checkpoint_dir / 'checkpoint.pth')
+    if is_main_process():
+        # save checkpoint
+        _logger.info(f'Saved checkpoint {epoch}')
+        state = dict(epoch=epoch + 1, model=lin_clf_without_ddp.state_dict(),
+                        optimizer=optimizer.state_dict())
+        if (args.checkpoint_dir / 'checkpoint.pth').is_file():
+            os.rename(args.checkpoint_dir / 'checkpoint.pth', args.checkpoint_dir / f'checkpoint_{epoch}')
+        torch.save(state, args.checkpoint_dir / 'checkpoint.pth')
     
 def validate(args, epoch, model, lin_clf, loader, sampler, device, tb_logger):
     lin_clf.eval()
