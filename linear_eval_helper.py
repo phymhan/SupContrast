@@ -80,7 +80,7 @@ def main_worker(args):
     sampler.set_epoch(0)
 
     test_dataset = torchvision.datasets.ImageFolder(args.test_data, Transform(args))
-    test_sampler = torch.utils.data.distributed.DistributedSampler(dataset, drop_last=False)
+    test_sampler = torch.utils.data.distributed.DistributedSampler(test_dataset, drop_last=False)
     assert args.batch_size % args.world_size == 0
     per_device_batch_size = args.batch_size // args.world_size
     test_loader = torch.utils.data.DataLoader(
