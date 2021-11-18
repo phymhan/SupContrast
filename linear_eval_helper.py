@@ -83,7 +83,7 @@ def main_worker(args):
     assert args.batch_size % args.world_size == 0
     per_device_batch_size = args.batch_size // args.world_size
     test_loader = torch.utils.data.DataLoader(
-        dataset, batch_size=per_device_batch_size, num_workers=args.workers,
+        test_dataset, batch_size=per_device_batch_size, num_workers=args.workers,
         pin_memory=True, sampler=sampler)
 
     sampler.set_epoch(0)
@@ -94,7 +94,7 @@ def main_worker(args):
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
     model_without_ddp = model.module
 
-    lin_clf = nn.Linear(2048, 1000)
+    lin_clf = nn.Linear(2048, 1000).to(device)
     lin_clf = torch.nn.parallel.DistributedDataParallel(lin_clf, device_ids=[args.gpu])
     lin_clf_without_ddp = lin_clf.module
 
