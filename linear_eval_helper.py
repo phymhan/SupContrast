@@ -116,12 +116,21 @@ def main_worker(args):
     optimizer = optim.SGD(lin_clf.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
 
     _logger.info('Starting linear evaluation training')
-    train(args, model, lin_clf, optimizer, loader, sampler, device)
-    _logger.info('Starting linear evaluation validation')
-    validate(args, model, lin_clf, test_loader, test_sampler, device)
+
+    for epoch in range(args.start_epoch, args.epochs):
+        _logger.info(f'Starting training epoch {epoch}')
+        train(args, epoch, model, lin_clf, optimizer, loader, sampler, device, tb_logger)
+        _logger.info('Starting linear evaluation validation')
+        validate(args, epoch, model, lin_clf, test_loader, test_sampler, device, tb_logger)
+
+    if is_main_process():
+        # save final model
+        _logger.info(f'Saved final checkpoint')
+        torch.save(dict(classifier=lin_clf_without_ddp.state_dict()),
+                    args.checkpoint_dir + args.name + '-resnet50.pth')
 
 
-def train(args, model, lin_clf, optimizer, loader, sampler, device):
+def train(args, epoch, model, lin_clf, optimizer, loader, sampler, device, tb_logger):
     lin_clf.train()
     model.eval()
 
@@ -138,56 +147,58 @@ def train(args, model, lin_clf, optimizer, loader, sampler, device):
     start_time = time.time()
     itr = args.start_epoch * len(loader)
 
-    for epoch in range(args.start_epoch, args.epochs):
-        _logger.info(f'Starting training epoch {epoch}')
-        sampler.set_epoch(epoch)
+    sampler.set_epoch(epoch)
+    
+    for step, (images, labels) in enumerate(loader, start=epoch * len(loader)):
+        itr_start = time.time()
+        itr += 1
+        images = images.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
+
+        # lr = adjust_learning_rate(args, optimizer, loader, step)
+        optimizer.zero_grad()
+
+        with torch.no_grad():
+            features = model.module.forward_backbone(images)
+
+        outputs = lin_clf(features.detach())
+
+        loss = loss_fn(outputs, labels)
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
+        outputs = gather_from_all(outputs)
+        labels = gather_from_all(labels)
+
+        # update metrics
+        acc1, acc5 = accuracy(outputs, labels, topk=(1, 5))
+
+        itr_end = time.time()
+        itr_time = itr_end - itr_start
         
-        for step, (images, labels) in enumerate(loader, start=epoch * len(loader)):
-            itr_start = time.time()
-            itr += 1
-            images = images.to(device, non_blocking=True)
-            labels = labels.to(device, non_blocking=True)
+        if is_main_process():
+            bs = labels.shape[0]
+            avg_loss.update(loss.item(), bs)
+            avg_itr.update(itr_time)
+            avg_top1.update(acc1[0], bs)
+            avg_top5.update(acc5[0], bs)
 
-            # lr = adjust_learning_rate(args, optimizer, loader, step)
-            optimizer.zero_grad()
+            tb_logger.add_scalar('Loss/train', loss.item(), step)
+            tb_logger.add_scalar('Accuracy1/train', acc1[0], step)
+            tb_logger.add_scalar('Accuracy5/train', acc5[0], step)
 
-            with torch.no_grad():
-                features = model.module.forward_backbone(images)
-
-            outputs = lin_clf(features.detach())
-
-            loss = loss_fn(outputs, labels)
-
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-
-            outputs = gather_from_all(outputs)
-            labels = gather_from_all(labels)
-
-            # update metrics
-            acc1, acc5 = accuracy(outputs, labels, topk=(1, 5))
-
-            itr_end = time.time()
-            itr_time = itr_end - itr_start
-            
+        if step % args.print_freq == 0:
+            torch.distributed.reduce(acc1[0].div_(args.world_size), 0)
+            torch.distributed.reduce(acc5[0].div_(args.world_size), 0)
             if is_main_process():
-                bs = labels.shape[0]
-                avg_loss.update(loss.item(), bs)
-                avg_itr.update(itr_time)
-                avg_top1.update(acc1[0], bs)
-                avg_top5.update(acc5[0], bs)
-
-            if step % args.print_freq == 0:
-                torch.distributed.reduce(acc1[0].div_(args.world_size), 0)
-                torch.distributed.reduce(acc5[0].div_(args.world_size), 0)
-                if is_main_process():
-                    _logger.info(f'epoch={epoch}, step={step}, loss={loss.item()}, acc1={acc1[0].item()}, acc5={acc5[0].item()}, itr time={itr_time}')
-                    stats = dict(epoch=epoch, step=step, #learning_rate=lr,
-                                 loss=loss.item(), acc1=acc1.item(), acc5=acc5.item(),
-                                 time=int(time.time() - start_time))
-                    with open(args.checkpoint_dir / 'stats.txt', 'a') as stats_file:
-                        stats_file.write(json.dumps(stats) + "\n")
+                _logger.info(f'epoch={epoch}, step={step}, loss={loss.item()}, acc1={acc1[0].item()}, acc5={acc5[0].item()}, itr time={itr_time}')
+                stats = dict(epoch=epoch, step=step, #learning_rate=lr,
+                                loss=loss.item(), acc1=acc1.item(), acc5=acc5.item(),
+                                time=int(time.time() - start_time))
+                with open(args.checkpoint_dir / 'stats.txt', 'a') as stats_file:
+                    stats_file.write(json.dumps(stats) + "\n")
 
         if is_main_process():
             # save checkpoint
@@ -197,14 +208,8 @@ def train(args, model, lin_clf, optimizer, loader, sampler, device):
             if (args.checkpoint_dir / 'checkpoint.pth').is_file():
                 os.rename(args.checkpoint_dir / 'checkpoint.pth', args.checkpoint_dir / f'checkpoint_{epoch}')
             torch.save(state, args.checkpoint_dir / 'checkpoint.pth')
-
-    if is_main_process():
-        # save final model
-        _logger.info(f'Saved final checkpoint')
-        torch.save(dict(classifier=lin_clf_without_ddp.state_dict()),
-                    args.checkpoint_dir + args.name + '-resnet50.pth')
     
-def validate(args, model, lin_clf, loader, sampler, device):
+def validate(args, epoch, model, lin_clf, loader, sampler, device, tb_logger):
     lin_clf.eval()
     model.eval()
 
@@ -248,6 +253,8 @@ def validate(args, model, lin_clf, loader, sampler, device):
             avg_top1.update(acc1[0], bs)
             avg_top5.update(acc5[0], bs)
 
+            tb_logger.add_scalar('Loss/test', loss.item(), step)
+
         if step % args.print_freq == 0:
             torch.distributed.reduce(acc1[0].div_(args.world_size), 0)
             torch.distributed.reduce(acc5[0].div_(args.world_size), 0)
@@ -258,6 +265,12 @@ def validate(args, model, lin_clf, loader, sampler, device):
                                 time=int(time.time() - start_time))
                 with open(args.checkpoint_dir / 'test_stats.txt', 'a') as stats_file:
                     stats_file.write(json.dumps(stats) + "\n")
+    
+    if is_main_process():
+        tb_logger.add_scalar('Accuracy1/test', avg_top1.avg, epoch)
+        tb_logger.add_scalar('Accuracy5/test', avg_top5.avg, epoch)
+
+        _logger.info(f'Test: epoch={epoch}, acc1={avg_top1.avg}, acc5={avg_top5.avg}')
 
 
 
