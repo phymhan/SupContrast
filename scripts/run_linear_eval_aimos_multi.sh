@@ -20,6 +20,8 @@ python \
       --epochs 100 \
       --batch-size 512 \
       --learning-rate 5.0 \
+      --momentum 0.9 \
+      --weight-decay 0.0 \
       --print-freq 50 \
       --checkpoint-dir $HOME2/scratch/test/SupContrast/results/ \
       --checkpoint-path $HOME2/scratch/top5/SupContrast/results/supcon-baseline-imagenet/checkpoint_799 \
