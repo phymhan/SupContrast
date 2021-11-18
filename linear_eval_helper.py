@@ -122,7 +122,7 @@ def main_worker(args):
         _logger.info(f'Starting training epoch {epoch}')
         # train(args, epoch, model, lin_clf, optimizer, loader, sampler, device, tb_logger)
         _logger.info('Starting linear evaluation validation')
-        validate(args, epoch, model, lin_clf, loader, sampler, device, tb_logger)
+        validate(args, epoch, model, lin_clf, test_loader, test_sampler, device, tb_logger)
 
     if is_main_process():
         # save final model
@@ -568,5 +568,5 @@ class Transform:
 
 
     def __call__(self, x):
-        y1 = self.transform_supcon(x)
+        y1 = self.transform_lin_eval(x)
         return y1
