@@ -114,7 +114,7 @@ def main_worker(args):
     else:
         args.start_epoch = 0
 
-    optimizer = optim.SGD(lin_clf.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
+    optimizer = optim.Adam(lin_clf.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 
     _logger.info('Starting linear evaluation training')
 
