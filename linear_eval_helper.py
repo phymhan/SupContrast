@@ -87,7 +87,7 @@ def main_worker(args):
         test_dataset, batch_size=per_device_batch_size, num_workers=args.workers,
         pin_memory=True, sampler=sampler)
 
-    sampler.set_epoch(0)
+    test_sampler.set_epoch(0)
 
     _logger.info('Creating model')
     model = SimCLR(args).to(device)
