@@ -224,7 +224,6 @@ def validate(args, epoch, model, lin_clf, loader, sampler, device, tb_logger):
     start_time = time.time()
 
     _logger.info(f'Starting validation')
-    sampler.set_epoch(args.epoch+1)
     
     for step, (images, labels) in enumerate(loader):
         itr_start = time.time()
