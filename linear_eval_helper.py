@@ -69,7 +69,7 @@ def main_worker(args):
     global_rank = get_rank()
 
     _logger.info('Creating dataset')
-    dataset = torchvision.datasets.ImageFolder(args.data, Transform(args))
+    dataset = torchvision.datasets.ImageFolder(args.data, Transform(args, train=True))
     sampler = torch.utils.data.distributed.DistributedSampler(dataset, drop_last=False)
     assert args.batch_size % args.world_size == 0
     per_device_batch_size = args.batch_size // args.world_size
@@ -114,13 +114,16 @@ def main_worker(args):
     else:
         args.start_epoch = 0
 
+    #optimizer = optim.RMSprop(lin_clf.parameters(), lr=0.001, momentum=args.momentum, weight_decay=args.weight_decay) 
+    
     optimizer = optim.SGD(lin_clf.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs)
 
     _logger.info('Starting linear evaluation training')
 
     for epoch in range(args.start_epoch, args.epochs):
         _logger.info(f'Starting training epoch {epoch}')
-        train(args, epoch, model, lin_clf, optimizer, loader, sampler, device, tb_logger)
+        train(args, epoch, model, lin_clf, optimizer, scheduler, loader, sampler, device, tb_logger)
         _logger.info('Starting linear evaluation validation')
         validate(args, epoch, model, lin_clf, test_loader, test_sampler, device, tb_logger)
 
@@ -131,7 +134,7 @@ def main_worker(args):
                     args.checkpoint_dir + args.name + '-linclf.pth')
 
 
-def train(args, epoch, model, lin_clf, optimizer, loader, sampler, device, tb_logger):
+def train(args, epoch, model, lin_clf, optimizer, scheduler, loader, sampler, device, tb_logger):
     lin_clf.train()
     model.eval()
 
@@ -201,6 +204,7 @@ def train(args, epoch, model, lin_clf, optimizer, loader, sampler, device, tb_lo
                 with open(args.checkpoint_dir / 'stats.txt', 'a') as stats_file:
                     stats_file.write(json.dumps(stats) + "\n")
 
+    scheduler.step()
     if is_main_process():
         # save checkpoint
         _logger.info(f'Saved checkpoint {epoch}')
@@ -512,7 +516,8 @@ class Solarization(object):
 
 
 class Transform:
-    def __init__(self, args):
+    def __init__(self, args, train=False):
+        self.train=train
         self.transform = transforms.Compose([
             transforms.RandomResizedCrop(224, interpolation=Image.BICUBIC),
             transforms.RandomHorizontalFlip(p=0.5),
@@ -556,6 +561,14 @@ class Transform:
                         std=[0.229, 0.224, 0.225])
         ])
 
+        self.transform_lin_eval_train = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                std=[0.229, 0.224, 0.225])
+        ])
+
         self.transform_lin_eval = transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
@@ -566,5 +579,8 @@ class Transform:
 
 
     def __call__(self, x):
+        if self.train:
+            return self.transform_lin_eval_train(x)
+
         y1 = self.transform_lin_eval(x)
         return y1
