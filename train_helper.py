@@ -5,6 +5,7 @@ import time
 import math
 import random
 import json
+import copy
 
 import torch
 from torch import nn, optim
@@ -16,17 +17,11 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
 
-from dataset import IdxDataset, ClassDataset, ConcatDataset
+from dataset import ColoredMNIST
 from dist_utils import gather_from_all, init_distributed_mode, get_rank, is_main_process, get_world_size
 
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 _logger = logging.getLogger('train')
-
-def load_top5(args):
-    if os.path.isfile(args.top5_path):
-        print('Loading top5 dict')
-        with open(args.top5_path, 'rb') as f:
-            return pickle.load(f)
 
 def main_worker(args):
     init_distributed_mode(args)
@@ -47,14 +42,11 @@ def main_worker(args):
         except:
             tb_logger = SummaryWriter(args.log_dir + args.name + '1')
 
-    _logger.info('Loading top5 dict')
-    top5_dict = load_top5(args)
-
     num_tasks = get_world_size()
     global_rank = get_rank()
 
     _logger.info('Creating dataset')
-    dataset = IdxDataset('imagenet', args.data, Transform(args))
+    dataset = ColoredMNIST(args.data, env='all_train', transform=Transform(args))
     sampler = torch.utils.data.distributed.DistributedSampler(dataset, drop_last=False)
     assert args.batch_size % args.world_size == 0
     per_device_batch_size = args.batch_size // args.world_size
@@ -63,19 +55,6 @@ def main_worker(args):
         pin_memory=True, sampler=sampler)
 
     sampler.set_epoch(0)
-    # dataset1 = torchvision.datasets.ImageFolder(args.data, Transform(args))
-    # dataset2 = torchvision.datasets.ImageFolder(args.data, Transform(args))
-    # sampler1 = torch.utils.data.distributed.DistributedSampler(dataset1, num_replicas=num_tasks, rank=global_rank, drop_last=True)
-    # sampler2 = torch.utils.data.distributed.DistributedSampler(dataset2, num_replicas=num_tasks, rank=global_rank, drop_last=True)
-    # assert args.batch_size % args.world_size == 0
-    # per_device_batch_size = args.batch_size // args.world_size
-    # loader = torch.utils.data.DataLoader(
-    #     dataset1, batch_size=per_device_batch_size, num_workers=args.workers,
-    #     pin_memory=True, sampler=sampler1, drop_last=True)
-    # loader2 = torch.utils.data.DataLoader(
-    #     dataset2, batch_size=per_device_batch_size, num_workers=args.workers,
-    #     pin_memory=True, sampler=sampler2, drop_last=True)
-
 
     _logger.info('Creating model')
     model = SimCLR(args).to(device)
@@ -190,11 +169,14 @@ class SimCLR(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        self.backbone = torchvision.models.resnet50(zero_init_residual=True)
-        self.backbone.fc = nn.Identity()
+        self.backbone1 = torchvision.models.resnet18(zero_init_residual=True)
+        self.backbone1.fc = nn.Identity()
+
+        self.backbone2 = torchvision.models.resnet18(zero_init_residual=True)
+        self.backbone2.fc = nn.Identity()
 
         # projector
-        sizes = [2048] * self.args.layer + [self.args.dim]
+        sizes = [512] * self.args.layer + [self.args.dim]
         # sizes = [2048, 2048, 2048, self.args.dim]
         layers = []
         for i in range(len(sizes) - 2):
@@ -203,43 +185,59 @@ class SimCLR(nn.Module):
             layers.append(nn.ReLU(inplace=True))
         layers.append(nn.Linear(sizes[-2], sizes[-1], bias=False))
         layers.append(nn.BatchNorm1d(sizes[-1]))
-        self.projector = nn.Sequential(*layers)
+        self.projector1 = nn.Sequential(*layers)
+        self.projector2 = nn.Sequential(*copy.deepcopy(layers))
 
-        self.onne_head = nn.Linear(2048, 1000)
+        self.onne_head_digit = nn.Linear(512, 10)
+        self.onne_head_color = nn.Linear(512, 1)
         self.loss_fn = supcon_loss
 
-    def forward(self, y1, y2, neg_images=None, labels=None, neg_labels=None, top5_labels=None):
-        r1 = self.backbone(y1)
-        r2 = self.backbone(y2)
-        if neg_images is not None:
-            r3 = self.backbone(neg_images)
+    def forward(self, y1, y2, digit_labels=None, color_labels=None):
+        r1_1 = self.backbone1(y1)
+        r1_2 = self.backbone1(y2)
+
+        r2_1 = self.backbone1(y1)
+        r2_2 = self.backbone1(y2)
 
         # projection
-        z1 = self.projector(r1)
-        z2 = self.projector(r2)
-        
-        if neg_images is not None:
-            z3 = self.projector(r3)
+        z1_1 = self.projector1(r1_1)
+        z1_2 = self.projector1(r1_2)
 
-        if neg_images is not None:
-            loss = self.loss_fn(z1, z2, labels, neg_features=z3, neg_labels=neg_labels)
-        elif top5_labels is not None:
-            loss = self.loss_fn(z1, z2, labels, top5_labels=top5_labels)
-        else:
-            loss = self.loss_fn(z1, z2)
+        z2_1 = self.projector1(r2_1)
+        z2_2 = self.projector1(r2_2)
 
-        logits = self.onne_head(r1.detach())
-        cls_loss = torch.nn.functional.cross_entropy(logits, labels)
-        acc = torch.sum(torch.eq(torch.argmax(logits, dim=1), labels)) / logits.size(0)
+        loss = self.loss_fn(z1_1, z1_2, z2_1, z2_2)
 
-        loss = loss + cls_loss
+        # Online classifier 
+        logits_digit1 = self.onne_head_digit(r1_1.detach())
+        logits_color1 = self.onne_head_color(r1_1.detach())
 
-        return loss, acc
+        logits_digit2 = self.onne_head_digit(r2_1.detach())
+        logits_color2 = self.onne_head_color(r2_1.detach())
+
+        cls_digit_loss1 = torch.nn.functional.cross_entropy(logits_digit1, digit_labels)
+        cls_digit_loss2 = torch.nn.functional.cross_entropy(logits_digit2, digit_labels)
+
+        cls_color_loss1 = torch.nn.functional.binary_cross_entropy_with_logits(logits_color1, color_labels)
+        cls_color_loss2 = torch.nn.functional.binary_cross_entropy_with_logits(logits_color2, color_labels)
+
+        digit_acc1 = torch.sum(torch.eq(torch.argmax(logits_digit1, dim=1), digit_labels)) / logits_digit1.size(0)
+        digit_acc2 = torch.sum(torch.eq(torch.argmax(logits_digit2, dim=1), digit_labels)) / logits_digit2.size(0)
+
+        logits_color1 = logits_color1 > 0.5
+        logits_color2 = logits_color2 > 0.5
+
+        color_acc1 = (logits_color1 == color_labels).sum() / logits_color1.size(0)
+        color_acc2 = (logits_color2 == color_labels).sum() / logits_color2.size(0)
+
+        loss = loss + cls_digit_loss1 + cls_digit_loss2 + cls_color_loss1 + cls_color_loss2
+
+        return loss, digit_acc1, digit_acc2, color_acc1, color_acc2
 
 
 def infoNCE(z1, z2, temperature=0.1):
-    z1 = torch.nn.functional.normaze(z1, dim=1)
-    z2 = torch.nn.functional.normaze(z2, dim=1)
+    z1 = torch.nn.functional.normalize(z1, dim=1)
+    z2 = torch.nn.functional.normalize(z2, dim=1)
     z1 = gather_from_all(z1)
     z2 = gather_from_all(z2)
     logits = z1 @ z2.T
@@ -247,6 +245,45 @@ def infoNCE(z1, z2, temperature=0.1):
     n = z2.shape[0]
     labels = torch.arange(0, n, dtype=torch.long).cuda()
     loss = torch.nn.functional.cross_entropy(logits, labels)
+    return loss
+
+def infoNCE_diverse(z1_1, z1_2, z2_1, z2_2, temperature=0.1, lamb=1.0):
+    z1_1 = torch.nn.functional.normalize(z1_1, dim=1)
+    z1_2 = torch.nn.functional.normalize(z1_2, dim=1)
+    z2_1 = torch.nn.functional.normalize(z2_1, dim=1)
+    z2_2 = torch.nn.functional.normalize(z2_2, dim=1)
+
+    z1_1 = gather_from_all(z1_1)
+    z1_2 = gather_from_all(z1_2)
+    z2_1 = gather_from_all(z2_1)
+    z2_2 = gather_from_all(z2_2)
+
+    z1 = torch.cat([z1_1, z1_2], dim=0)
+    z2 = torch.cat([z2_1, z2_2], dim=0)
+
+    sim_matrix1 = z1 @ z1.T
+    sim_matrix1 /= temperature
+
+    sim_matrix2 = z2 @ z2.T
+    sim_matrix2 /= temperature
+
+    bs = z1_1.shape[0]
+    n_views = 2
+    device = z1_1.device
+
+    labels = torch.cat([torch.arange(bs) for i in range(n_views)], dim=0)
+    labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
+    labels = labels.to(device)
+
+    mask = torch.eye(labels.shape[0], dtype=torch.bool).to(device)
+    labels = labels[~mask].view(labels.shape[0], -1)
+
+    sim_matrix1 = sim_matrix1[~mask].view(sim_matrix1.shape[0], -1)
+    sim_matrix2 = sim_matrix2[~mask].view(sim_matrix2.shape[0], -1)
+
+    loss = torch.nn.functional.cross_entropy(sim_matrix1, labels) + torch.nn.functional.cross_entropy(sim_matrix2, labels)
+    loss += -1.0 * lamb * torch.nn.functional.l1_loss(torch.exp(sim_matrix1), torch.exp(sim_matrix2))
+
     return loss
 
 def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, top5_labels=None, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
