@@ -191,32 +191,34 @@ class SimCLR(nn.Module):
         self.projector1 = nn.Sequential(*layers)
         self.projector2 = nn.Sequential(*copy.deepcopy(layers))
 
-        self.onne_head_digit = nn.Linear(512, 10)
-        self.onne_head_color = nn.Linear(512, 1)
+        self.onne_head_digit1 = nn.Linear(512, 10)
+        self.onne_head_digit2 = nn.Linear(512, 10)
+        self.onne_head_color1 = nn.Linear(512, 1)
+        self.onne_head_color2 = nn.Linear(512, 1)
         self.loss_fn = infoNCE_diverse
 
     def forward(self, y1, y2, digit_labels=None, color_labels=None):
         r1_1 = self.backbone1(y1)
         r1_2 = self.backbone1(y2)
 
-        r2_1 = self.backbone1(y1)
-        r2_2 = self.backbone1(y2)
+        r2_1 = self.backbone2(y1)
+        r2_2 = self.backbone2(y2)
 
         # projection
         z1_1 = self.projector1(r1_1)
         z1_2 = self.projector1(r1_2)
 
-        z2_1 = self.projector1(r2_1)
-        z2_2 = self.projector1(r2_2)
+        z2_1 = self.projector2(r2_1)
+        z2_2 = self.projector2(r2_2)
 
         loss = self.loss_fn(z1_1, z1_2, z2_1, z2_2)
 
         # Online classifier 
-        logits_digit1 = self.onne_head_digit(r1_1.detach())
-        logits_color1 = self.onne_head_color(r1_1.detach())
+        logits_digit1 = self.onne_head_digit1(r1_1.detach())
+        logits_color1 = self.onne_head_color1(r1_1.detach())
 
-        logits_digit2 = self.onne_head_digit(r2_1.detach())
-        logits_color2 = self.onne_head_color(r2_1.detach())
+        logits_digit2 = self.onne_head_digit2(r2_1.detach())
+        logits_color2 = self.onne_head_color2(r2_1.detach())
 
         cls_digit_loss1 = torch.nn.functional.cross_entropy(logits_digit1, digit_labels)
         cls_digit_loss2 = torch.nn.functional.cross_entropy(logits_digit2, digit_labels)
