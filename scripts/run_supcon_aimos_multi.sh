@@ -12,7 +12,7 @@ ulimit -s unlimited
 
 python \
       $HOME2/scratch/diverse/SupContrast/main_dist_multi.py \
-      --data $HOME2/scratch/diverse \
+      --data $HOME2/scratch/diverse/SupContrast/data/ \
       --workers 16 \
       --nodes 1 \
       --ngpus 6 \
