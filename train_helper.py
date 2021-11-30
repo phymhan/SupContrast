@@ -62,9 +62,10 @@ def main_worker(args):
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
     model_without_ddp = model.module
 
-    optimizer = LARS(model.parameters(), lr=0, weight_decay=args.weight_decay,
-                     weight_decay_filter=exclude_bias_and_norm,
-                     lars_adaptation_filter=exclude_bias_and_norm)
+    # optimizer = LARS(model.parameters(), lr=0, weight_decay=args.weight_decay,
+    #                  weight_decay_filter=exclude_bias_and_norm,
+    #                  lars_adaptation_filter=exclude_bias_and_norm)
+    optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # automatically resume from checkpoint if it exists
     if (args.checkpoint_dir / 'checkpoint.pth').is_file():
@@ -86,21 +87,16 @@ def main_worker(args):
         _logger.info(f'Starting training epoch {epoch}')
         sampler.set_epoch(epoch)
         
-        for step, ((y1, y2), labels, idxs) in enumerate(loader, start=epoch * len(loader)):
+        for step, ((y1, y2), digit_labels, color_labels) in enumerate(loader, start=epoch * len(loader)):
             itr_start = time.time()
             itr += 1
             y1 = y1.to(device, non_blocking=True)
             y2 = y2.to(device, non_blocking=True)
-            
-            # Get top 5 labels for masking
-            pad = torch.nn.ConstantPad1d((0,1), -1)
-            top5_labels = [top5_dict[int(i)] if len(top5_dict[int(i)]) == 10 else pad(top5_dict[int(i)]) for i in idxs]
-            top5_labels = torch.stack(top5_labels, dim=0)[:, :args.topk].clone()
 
             lr = adjust_learning_rate(args, optimizer, loader, step)
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
-                loss, acc = model.forward(y1, y2, labels=labels, top5_labels=top5_labels)
+                loss, digit_acc1, digit_acc2, color_acc1, color_acc2 = model.forward(y1, y2, digit_labels, color_labels)
                 # loss, acc = model.forward(y1, y2, neg_images=neg_y, labels=labels, neg_labels=neg_labels)
             
             scaler.scale(loss).backward()
@@ -111,7 +107,10 @@ def main_worker(args):
             
             if is_main_process():
                 tb_logger.add_scalar('loss', loss.item(), itr)
-                tb_logger.add_scalar('acc', acc.item(), itr)
+                tb_logger.add_scalar('acc/f_digit_acc', digit_acc1.item(), itr)
+                tb_logger.add_scalar('acc/g_digit_acc', digit_acc2.item(), itr)
+                tb_logger.add_scalar('acc/f_color_acc', color_acc1.item(), itr)
+                tb_logger.add_scalar('acc/g_color_acc', color_acc2.item(), itr)
 
             if step % args.print_freq == 0:
                 torch.distributed.reduce(acc.div_(args.world_size), 0)
@@ -190,7 +189,7 @@ class SimCLR(nn.Module):
 
         self.onne_head_digit = nn.Linear(512, 10)
         self.onne_head_color = nn.Linear(512, 1)
-        self.loss_fn = supcon_loss
+        self.loss_fn = infoNCE_diverse
 
     def forward(self, y1, y2, digit_labels=None, color_labels=None):
         r1_1 = self.backbone1(y1)
@@ -478,8 +477,20 @@ class Transform:
                         std=[0.229, 0.224, 0.225])
         ])
 
+        self.transform_cmnist = transforms.Compose([
+            transforms.RandomResizedCrop(size=28, scale=(0.2, 1.)),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomApply([
+                transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
+            ], p=0.8),
+            transforms.RandomGrayscale(p=0.2),
+            transforms.ToTensor(),
+            # transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                        # std=[0.229, 0.224, 0.225])
+        ])
+
 
     def __call__(self, x):
-        y1 = self.transform_supcon(x)
-        y2 = self.transform_supcon(x)
+        y1 = self.transform_cmnist(x)
+        y2 = self.transform_cmnist(x)
         return y1, y2

@@ -11,21 +11,19 @@ conda activate $PYTHON_VIRTUAL_ENVIRONMENT
 ulimit -s unlimited
 
 python \
-      $HOME2/scratch/test/SupContrast/main_dist_multi.py \
-      --data /gpfs/u/locker/200/CADS/datasets/ImageNet/train/ \
+      $HOME2/scratch/diverse/SupContrast/main_dist_multi.py \
+      --data $HOME2/scratch/diverse \
       --workers 16 \
-      --nodes 4 \
+      --nodes 1 \
       --ngpus 6 \
       --epochs 800 \
-      --topk 5 \
-      --batch-size 1536 \
-      --learning-rate 1.2 \
+      --batch-size 384 \
+      --learning-rate 0.5 \
       --temp 0.1 \
       --print-freq 50 \
-      --checkpoint-dir $HOME2/scratch/test/SupContrast/results/ \
-      --top5-path $HOME2/scratch/test/SupContrast/imagenet_resnet50_top10.pkl \
-      --log-dir $HOME2/scratch/test/SupContrast/logs/ \
-      --name supcon-negboost-imagenet-multi-top5mask
+      --checkpoint-dir $HOME2/scratch/diverse/SupContrast/results/ \
+      --log-dir $HOME2/scratch/diverse/SupContrast/logs/ \
+      --name infonce-diverse
 
 echo "Run completed at:- "
 date
