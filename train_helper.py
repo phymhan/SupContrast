@@ -280,7 +280,7 @@ def infoNCE_diverse(z1_1, z1_2, z2_1, z2_2, temperature=0.1, lamb=1.0):
 
     mask = torch.eye(labels.shape[0], dtype=torch.bool).to(device)
     labels = labels[~mask].view(labels.shape[0], -1)
-    labels = torch.argmax(labels, dim=1).unsqueeze(-1)
+    labels = torch.argmax(labels, dim=1)
 
     sim_matrix1 = sim_matrix1[~mask].view(sim_matrix1.shape[0], -1)
     sim_matrix2 = sim_matrix2[~mask].view(sim_matrix2.shape[0], -1)
