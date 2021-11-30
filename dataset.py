@@ -144,15 +144,16 @@ class ColoredMNIST(datasets.VisionDataset):
     Returns:
         tuple: (image, target) where target is index of the target class.
     """
-    img, target = self.data_label_tuples[index]
+    img, target1, target2 = self.data_label_tuples[index]
 
     if self.transform is not None:
       img = self.transform(img)
 
     if self.target_transform is not None:
-      target = self.target_transform(target)
+      target1 = self.target_transform(target1)
+      target2 = self.target_transform(target2)
 
-    return img, target
+    return img, target1, target2
 
   def __len__(self):
     return len(self.data_label_tuples)
