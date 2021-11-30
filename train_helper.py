@@ -227,8 +227,8 @@ class SimCLR(nn.Module):
         digit_acc1 = torch.sum(torch.eq(torch.argmax(logits_digit1, dim=1), digit_labels)) / logits_digit1.size(0)
         digit_acc2 = torch.sum(torch.eq(torch.argmax(logits_digit2, dim=1), digit_labels)) / logits_digit2.size(0)
 
-        logits_color1 = logits_color1 > 0.5
-        logits_color2 = logits_color2 > 0.5
+        logits_color1 = torch.nn.functional.sigmoid(logits_color1) > 0.5
+        logits_color2 = torch.nn.functional.sigmoid(logits_color2) > 0.5
 
         color_acc1 = (logits_color1 == color_labels).sum() / logits_color1.size(0)
         color_acc2 = (logits_color2 == color_labels).sum() / logits_color2.size(0)
