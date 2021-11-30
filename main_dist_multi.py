@@ -14,7 +14,7 @@ from dist_utils import gather_from_all
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 _logger = logging.getLogger('train')
 
-parser = argparse.ArgumentParser(description='Supervised Contrastive Learning with Negative Boosting')
+parser = argparse.ArgumentParser(description='Diverse Hypothesis Contrastive Learning')
 parser.add_argument('--data', type=Path, metavar='DIR', default="/anonymous/",
                     help='path to dataset')
 parser.add_argument('--workers', default=8, type=int, metavar='N',
@@ -25,8 +25,10 @@ parser.add_argument('--batch-size', default=4096, type=int, metavar='N',
                     help='mini-batch size')
 parser.add_argument('--learning-rate', default=4.8, type=float, metavar='LR',
                     help='base learning rate')
-parser.add_argument('--weight-decay', default=1e-6, type=float, metavar='W',
+parser.add_argument('--weight-decay', default=1e-4, type=float, metavar='W',
                     help='weight decay')
+parser.add_argument('--momentum', type=float, default=0.9,
+                    help='momentum')
 parser.add_argument('--print-freq', default=10, type=int, metavar='N',
                     help='print frequency')
 parser.add_argument('--checkpoint-dir', default='/anonymous/', type=Path,
