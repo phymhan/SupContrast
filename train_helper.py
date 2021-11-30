@@ -118,7 +118,7 @@ def main_worker(args):
                 torch.distributed.reduce(color_acc1.div_(args.world_size), 0)
                 torch.distributed.reduce(color_acc2.div_(args.world_size), 0)
                 if is_main_process():
-                    _logger.info(f'epoch={epoch}, step={step}, loss={loss.item()}, digit acc1={digit_acc1.item()}, digit acc1={digit_acc2.item()}, color acc1={color_acc1.item()}, color acc2={color_acc2.item()} itr time={itr_time}')
+                    _logger.info(f'epoch={epoch}, step={step}, loss={loss.item()}, digit acc1={digit_acc1.item()}, digit acc2={digit_acc2.item()}, color acc1={color_acc1.item()}, color acc2={color_acc2.item()} itr time={itr_time}')
                     stats = dict(epoch=epoch, step=step, learning_rate=lr,
                                  loss=loss.item(), digit_acc1=digit_acc1.item(), digit_acc2=digit_acc2.item(),
                                  color_acc1=color_acc1.item(), color_acc2=color_acc2.item(),
