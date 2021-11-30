@@ -284,7 +284,7 @@ def infoNCE_diverse(z1_1, z1_2, z2_1, z2_2, temperature=0.1, lamb=1.0):
     sim_matrix1 = sim_matrix1[~mask].view(sim_matrix1.shape[0], -1)
     sim_matrix2 = sim_matrix2[~mask].view(sim_matrix2.shape[0], -1)
 
-    loss = torch.nn.functional.cross_entropy(sim_matrix1, labels) + torch.nn.functional.cross_entropy(sim_matrix2, labels)
+    loss = torch.nn.functional.cross_entropy(sim_matrix1, labels.long()) + torch.nn.functional.cross_entropy(sim_matrix2, labels.long())
     loss += -1.0 * lamb * torch.nn.functional.l1_loss(torch.exp(sim_matrix1), torch.exp(sim_matrix2))
 
     return loss
