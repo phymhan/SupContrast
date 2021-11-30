@@ -203,11 +203,11 @@ class ColoredMNIST(datasets.VisionDataset):
       colored_arr = color_grayscale_arr(im_array, red=color_red)
 
       if idx < 20000:
-        train1_set.append((Image.fromarray(colored_arr), binary_label))
+        train1_set.append((Image.fromarray(colored_arr), label, binary_label))
       elif idx < 40000:
-        train2_set.append((Image.fromarray(colored_arr), binary_label))
+        train2_set.append((Image.fromarray(colored_arr), label, binary_label))
       else:
-        test_set.append((Image.fromarray(colored_arr), binary_label))
+        test_set.append((Image.fromarray(colored_arr), label, binary_label))
 
       # Debug
       # print('original label', type(label), label)
