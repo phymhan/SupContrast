@@ -221,8 +221,8 @@ class SimCLR(nn.Module):
         cls_digit_loss1 = torch.nn.functional.cross_entropy(logits_digit1, digit_labels)
         cls_digit_loss2 = torch.nn.functional.cross_entropy(logits_digit2, digit_labels)
 
-        cls_color_loss1 = torch.nn.functional.binary_cross_entropy_with_logits(logits_color1, color_labels)
-        cls_color_loss2 = torch.nn.functional.binary_cross_entropy_with_logits(logits_color2, color_labels)
+        cls_color_loss1 = torch.nn.functional.binary_cross_entropy_with_logits(logits_color1.squeeze(), color_labels)
+        cls_color_loss2 = torch.nn.functional.binary_cross_entropy_with_logits(logits_color2.squeeze(), color_labels)
 
         digit_acc1 = torch.sum(torch.eq(torch.argmax(logits_digit1, dim=1), digit_labels)) / logits_digit1.size(0)
         digit_acc2 = torch.sum(torch.eq(torch.argmax(logits_digit2, dim=1), digit_labels)) / logits_digit2.size(0)
