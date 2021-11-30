@@ -113,11 +113,15 @@ def main_worker(args):
                 tb_logger.add_scalar('acc/g_color_acc', color_acc2.item(), itr)
 
             if step % args.print_freq == 0:
-                torch.distributed.reduce(acc.div_(args.world_size), 0)
+                torch.distributed.reduce(digit_acc1.div_(args.world_size), 0)
+                torch.distributed.reduce(digit_acc2.div_(args.world_size), 0)
+                torch.distributed.reduce(color_acc1.div_(args.world_size), 0)
+                torch.distributed.reduce(color_acc2.div_(args.world_size), 0)
                 if is_main_process():
-                    _logger.info(f'epoch={epoch}, step={step}, loss={loss.item()}, acc={acc.item()}, itr time={itr_time}')
+                    _logger.info(f'epoch={epoch}, step={step}, loss={loss.item()}, digit acc1={digit_acc1.item()}, digit acc1={digit_acc2.item()}, color acc1={color_acc1.item()}, color acc2={color_acc2.item()} itr time={itr_time}')
                     stats = dict(epoch=epoch, step=step, learning_rate=lr,
-                                 loss=loss.item(), acc=acc.item(),
+                                 loss=loss.item(), digit_acc1=digit_acc1.item(), digit_acc2=digit_acc2.item(),
+                                 color_acc1=color_acc1.item(), color_acc2=color_acc2.item(),
                                  time=int(time.time() - start_time))
                     with open(args.checkpoint_dir / 'stats.txt', 'a') as stats_file:
                         stats_file.write(json.dumps(stats) + "\n")
@@ -137,7 +141,7 @@ def main_worker(args):
         torch.save(dict(backbone=model_without_ddp.backbone.state_dict(),
                         projector=model_without_ddp.projector.state_dict(),
                         head=model_without_ddp.onne_head.state_dict()),
-                    args.checkpoint_dir + args.name + '-resnet50.pth')
+                    args.checkpoint_dir + args.name + '-resnet18.pth')
 
         # torch.save(dict(backbone=model.module.backbone.state_dict(),
         #                 projector=model.module.projector.state_dict(),
