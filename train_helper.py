@@ -233,7 +233,7 @@ class SimCLR(nn.Module):
         color_acc1 = (logits_color1 == color_labels).sum() / logits_color1.size(0)
         color_acc2 = (logits_color2 == color_labels).sum() / logits_color2.size(0)
 
-        loss = loss + cls_digit_loss1 + cls_digit_loss2 + cls_color_loss1 + cls_color_loss2
+        loss += cls_digit_loss1 + cls_digit_loss2 + cls_color_loss1 + cls_color_loss2
 
         return loss, digit_acc1, digit_acc2, color_acc1, color_acc2
 
