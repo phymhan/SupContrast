@@ -4,7 +4,6 @@ import math
 import numpy as np
 import torch
 import torch.optim as optim
-import horovod.torch as hvd
 
 
 class TwoCropTransform:

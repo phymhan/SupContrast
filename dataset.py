@@ -217,7 +217,7 @@ class ColoredMNIST(datasets.VisionDataset):
       # plt.show()
       # break
 
-    dataset_utils.makedir_exist_ok(colored_mnist_dir)
+    os.makedirs(colored_mnist_dir, exist_ok=True)
     torch.save(train1_set, os.path.join(colored_mnist_dir, 'train1.pt'))
     torch.save(train2_set, os.path.join(colored_mnist_dir, 'train2.pt'))
     torch.save(test_set, os.path.join(colored_mnist_dir, 'test.pt'))
