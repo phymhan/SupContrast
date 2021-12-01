@@ -96,7 +96,8 @@ def main_worker(args):
             lr = adjust_learning_rate(args, optimizer, loader, step)
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
-                loss, digit_acc1, digit_acc2, color_acc1, color_acc2 = model.forward(y1, y2, digit_labels, color_labels, lamb=args.lamb)
+                infonce_loss, reg_loss, clf_loss, digit_acc1, digit_acc2, color_acc1, color_acc2 = model.forward(y1, y2, digit_labels, color_labels, lamb=args.lamb)
+                loss = infonce_loss + reg_loss + clf_loss
                 # loss, acc = model.forward(y1, y2, neg_images=neg_y, labels=labels, neg_labels=neg_labels)
             
             scaler.scale(loss).backward()
@@ -106,7 +107,10 @@ def main_worker(args):
             itr_time = itr_end - itr_start
             
             if is_main_process():
-                tb_logger.add_scalar('loss', loss.item(), itr)
+                tb_logger.add_scalar('loss/total', loss.item(), itr)
+                tb_logger.add_scalar('loss/infonce', infonce_loss.item(), itr)
+                tb_logger.add_scalar('loss/reg', reg_loss.item(), itr)
+                tb_logger.add_scalar('loss/clf', clf_loss.item(), itr)
                 tb_logger.add_scalar('acc/f_digit_acc', digit_acc1.item(), itr)
                 tb_logger.add_scalar('acc/g_digit_acc', digit_acc2.item(), itr)
                 tb_logger.add_scalar('acc/f_color_acc', color_acc1.item(), itr)
@@ -211,7 +215,7 @@ class SimCLR(nn.Module):
         z2_1 = self.projector2(r2_1)
         z2_2 = self.projector2(r2_2)
 
-        loss = self.loss_fn(z1_1, z1_2, z2_1, z2_2, lamb=lamb)
+        loss, reg_loss = self.loss_fn(z1_1, z1_2, z2_1, z2_2, lamb=lamb)
 
         # Online classifier 
         logits_digit1 = self.onne_head_digit1(r1_1.detach())
@@ -235,9 +239,9 @@ class SimCLR(nn.Module):
         color_acc1 = (logits_color1 == color_labels).sum() / logits_color1.size(0)
         color_acc2 = (logits_color2 == color_labels).sum() / logits_color2.size(0)
 
-        loss += cls_digit_loss1 + cls_digit_loss2 + cls_color_loss1 + cls_color_loss2
+        clf_loss = cls_digit_loss1 + cls_digit_loss2 + cls_color_loss1 + cls_color_loss2
 
-        return loss, digit_acc1, digit_acc2, color_acc1, color_acc2
+        return loss, reg_loss, clf_loss, digit_acc1, digit_acc2, color_acc1, color_acc2
 
 
 def infoNCE(z1, z2, temperature=0.1):
@@ -288,9 +292,9 @@ def infoNCE_diverse(z1_1, z1_2, z2_1, z2_2, temperature=0.1, lamb=1.0):
     sim_matrix2 = sim_matrix2[~mask].view(sim_matrix2.shape[0], -1)
 
     loss = torch.nn.functional.cross_entropy(sim_matrix1, labels.long()) + torch.nn.functional.cross_entropy(sim_matrix2, labels.long())
-    loss += -1.0 * lamb * torch.nn.functional.l1_loss(torch.exp(sim_matrix1), torch.exp(sim_matrix2))
+    reg_loss = -1.0 * lamb * torch.nn.functional.l1_loss(torch.exp(sim_matrix1), torch.exp(sim_matrix2))
 
-    return loss
+    return loss, reg_loss
 
 def supcon_loss(z1, z2, labels=None, neg_features=None, neg_labels=None, top5_labels=None, mask=None, temperature=0.1, base_temperature=0.07, contrast_mode='all'):
     features1 = torch.nn.functional.normalize(z1, dim=1)
