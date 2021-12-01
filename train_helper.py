@@ -96,7 +96,7 @@ def main_worker(args):
             lr = adjust_learning_rate(args, optimizer, loader, step)
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
-                loss, digit_acc1, digit_acc2, color_acc1, color_acc2 = model.forward(y1, y2, digit_labels, color_labels)
+                loss, digit_acc1, digit_acc2, color_acc1, color_acc2 = model.forward(y1, y2, digit_labels, color_labels, lamb=args.lamb)
                 # loss, acc = model.forward(y1, y2, neg_images=neg_y, labels=labels, neg_labels=neg_labels)
             
             scaler.scale(loss).backward()
@@ -197,7 +197,7 @@ class SimCLR(nn.Module):
         self.onne_head_color2 = nn.Linear(512, 1)
         self.loss_fn = infoNCE_diverse
 
-    def forward(self, y1, y2, digit_labels=None, color_labels=None):
+    def forward(self, y1, y2, digit_labels=None, color_labels=None, lamb=1.0):
         r1_1 = self.backbone1(y1)
         r1_2 = self.backbone1(y2)
 
@@ -211,7 +211,7 @@ class SimCLR(nn.Module):
         z2_1 = self.projector2(r2_1)
         z2_2 = self.projector2(r2_2)
 
-        loss = self.loss_fn(z1_1, z1_2, z2_1, z2_2)
+        loss = self.loss_fn(z1_1, z1_2, z2_1, z2_2, lamb=lamb)
 
         # Online classifier 
         logits_digit1 = self.onne_head_digit1(r1_1.detach())

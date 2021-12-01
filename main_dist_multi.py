@@ -36,7 +36,7 @@ parser.add_argument('--checkpoint-dir', default='/anonymous/', type=Path,
 parser.add_argument('--log-dir', type=str, default='./logs/')
 parser.add_argument('--top5-path', type=str, default='./imagenet_resnet50_top10.pkl')
 parser.add_argument('--topk', type=int, default=5, help='K top prediction classes to use for mask creation')
-parser.add_argument('--lambda', type=float, default=1.0, help='Lambda for kernel regularization between f and g')
+parser.add_argument('--lamb', type=float, default=1.0, help='Lambda for kernel regularization between f and g')
 parser.add_argument('--name', type=str, default='test')
 parser.add_argument('--seed', type=int, default=21)
 
