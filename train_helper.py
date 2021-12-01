@@ -219,10 +219,10 @@ class SimCLR(nn.Module):
 
         # Online classifier 
         logits_digit1 = self.onne_head_digit1(r1_1.detach())
-        logits_color1 = self.onne_head_color1(r1_1.detach())
+        logits_color1 = self.onne_head_color1(r1_1.detach()).squeeze()
 
         logits_digit2 = self.onne_head_digit2(r2_1.detach())
-        logits_color2 = self.onne_head_color2(r2_1.detach())
+        logits_color2 = self.onne_head_color2(r2_1.detach()).squeeze()
 
         cls_digit_loss1 = torch.nn.functional.cross_entropy(logits_digit1, digit_labels)
         cls_digit_loss2 = torch.nn.functional.cross_entropy(logits_digit2, digit_labels)
@@ -233,11 +233,11 @@ class SimCLR(nn.Module):
         digit_acc1 = torch.sum(torch.eq(torch.argmax(logits_digit1, dim=1), digit_labels)) / logits_digit1.size(0)
         digit_acc2 = torch.sum(torch.eq(torch.argmax(logits_digit2, dim=1), digit_labels)) / logits_digit2.size(0)
 
-        logits_color1 = torch.nn.functional.sigmoid(logits_color1) > 0.5
-        logits_color2 = torch.nn.functional.sigmoid(logits_color2) > 0.5
+        logits_color1 = (torch.sigmoid(logits_color1) > 0.5).float()
+        logits_color2 = (torch.sigmoid(logits_color2) > 0.5).float()
 
-        color_acc1 = (logits_color1 == color_labels).sum() / logits_color1.size(0)
-        color_acc2 = (logits_color2 == color_labels).sum() / logits_color2.size(0)
+        color_acc1 = torch.sum(logits_color1 == color_labels) / logits_color1.size(0)
+        color_acc2 = torch.sum(logits_color2 == color_labels) / logits_color2.size(0)
 
         clf_loss = cls_digit_loss1 + cls_digit_loss2 + cls_color_loss1 + cls_color_loss2
 
