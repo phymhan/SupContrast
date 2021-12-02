@@ -211,8 +211,13 @@ class SimCLR(nn.Module):
     def forward(self, y1, y2, neg_images=None, labels=None, neg_labels=None, top5_labels=None):
         r1 = self.backbone(y1)
         r2 = self.backbone(y2)
+
+        r1 = nn.functional.normalize(r1)
+        r2 = nn.functional.normalize(r2)
+
         if neg_images is not None:
             r3 = self.backbone(neg_images)
+            r3 = nn.functional.normalize(r3)
 
         # projection
         z1 = self.projector(r1)
