@@ -48,7 +48,7 @@ def main_worker(args):
             tb_logger = SummaryWriter(args.log_dir + args.name + '1')
 
     _logger.info('Loading top5 dict')
-    top5_dict = load_top5(args)
+    #top5_dict = load_top5(args)
 
     num_tasks = get_world_size()
     global_rank = get_rank()
@@ -117,12 +117,6 @@ def main_worker(args):
             
             scaler.scale(loss).backward()
 
-            print_idx = 0
-            for p in model.parameters():
-                print_idx += 1
-                _logger.info('grads {}'.format(p.grad))
-                if print_idx > 10:
-                    break
             scaler.step(optimizer)
             scaler.update()
             itr_end = time.time()

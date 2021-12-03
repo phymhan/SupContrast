@@ -14,17 +14,17 @@ python \
       $HOME2/scratch/top5/SupContrast/main_dist_multi.py \
       --data /gpfs/u/locker/200/CADS/datasets/ImageNet/train/ \
       --workers 16 \
-      --nodes 2 \
+      --nodes 4 \
       --ngpus 6 \
       --epochs 800 \
-      --batch-size 768 \
+      --batch-size 1536 \
       --learning-rate 1.2 \
       --temp 0.1 \
       --print-freq 50 \
       --checkpoint-dir $HOME2/scratch/top5/SupContrast/results/ \
-      --log-dir $HOME2/scratch/SupContrast/logs/ \
+      --log-dir $HOME2/scratch/top5/SupContrast/logs/ \
       --top5-path $HOME2/scratch/top5/SupContrast/imagenet_top5.pkl \
-      --name supcon-negboost-imagenet-multi
+      --name supcon-negboost-imagenet-multi-test
 
 echo "Run completed at:- "
 date
