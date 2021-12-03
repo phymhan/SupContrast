@@ -55,7 +55,6 @@ def main_worker(args):
 
     _logger.info('Creating dataset')
     dataset = IdxDataset('imagenet', args.data, Transform(args))
-    neg_dataset = ClassDataset('imagenet', args.data, transform=Transform(args), is_train=True)
     sampler = torch.utils.data.distributed.DistributedSampler(dataset, num_replicas=num_tasks, rank=global_rank, drop_last=True)
     assert args.batch_size % args.world_size == 0
     per_device_batch_size = args.batch_size // args.world_size
@@ -99,24 +98,12 @@ def main_worker(args):
             y1 = y1.to(device, non_blocking=True)
             y2 = y2.to(device, non_blocking=True)
 
-            # Get aggregate top 5 samples
-            # top5 = torch.cat([top5_dict[int(i)] for i in idxs])
-            # top5 = torch.unique(top5)
-            # # Sampling (batch_size - 1) number of negative samples
-            # neg_images = neg_dataset.__getitem__(labels=top5, num_imgs=idxs.shape[0]-1)
-            # neg_images = neg_images.to(device, non_blocking=True)
-            
-
             lr = adjust_learning_rate(args, optimizer, loader, step)
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
                 loss, acc = model.forward(y1, y2, labels=labels)
-                # loss, acc = model.forward(y1, y2, neg_images, labels)
-
-
             
             scaler.scale(loss).backward()
-
             scaler.step(optimizer)
             scaler.update()
             itr_end = time.time()
@@ -203,8 +190,12 @@ class SimCLR(nn.Module):
     def forward(self, y1, y2, neg_images=None, labels=None):
         r1 = self.backbone(y1)
         r2 = self.backbone(y2)
+        r1 = nn.functional.normalize(r1)
+        r2 = nn.functional.normalize(r2)
+
         if neg_images:
             r3 = self.backbone(neg_images)
+            r3 = nn.functional.normalize(r3)
 
         # projection
         z1 = self.projector(r1)
@@ -428,12 +419,10 @@ class Transform:
         ])
 
         self.transform_supcon = transforms.Compose([
-            transforms.RandomResizedCrop(size=224, scale=(0.2, 1.)),
+            transforms.RandomResizedCrop(size=224, scale=(0.08, 1.)),
             transforms.RandomHorizontalFlip(),
-            transforms.RandomApply([
-                transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-            ], p=0.8),
-            transforms.RandomGrayscale(p=0.2),
+            transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.IMAGENET, interpolation=transforms.INTERPOLATIONMODE.BILINEAR),
+            transforms.RandomApply([transforms.GaussianBlur(kernel_size=224//20*2+1, sigma=(0.1, 2.0))], p=0.5),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                         std=[0.229, 0.224, 0.225])

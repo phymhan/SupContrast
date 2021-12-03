@@ -11,7 +11,7 @@ conda activate $PYTHON_VIRTUAL_ENVIRONMENT
 ulimit -s unlimited
 
 python \
-      $HOME2/scratch/top5/SupContrast/main_dist_multi.py \
+      $HOME2/scratch/baseline/SupContrast/main_dist_multi.py \
       --data /gpfs/u/locker/200/CADS/datasets/ImageNet/train/ \
       --workers 16 \
       --nodes 4 \
@@ -21,10 +21,9 @@ python \
       --learning-rate 1.2 \
       --temp 0.1 \
       --print-freq 50 \
-      --checkpoint-dir $HOME2/scratch/top5/SupContrast/results/ \
-      --log-dir $HOME2/scratch/top5/SupContrast/logs/ \
-      --top5-path $HOME2/scratch/top5/SupContrast/imagenet_top5.pkl \
-      --name supcon-negboost-imagenet-multi-test
+      --checkpoint-dir $HOME2/scratch/baseline/SupContrast/results/ \
+      --log-dir $HOME2/scratch/baseline/SupContrast/logs/ \
+      --name supcon-baseline-imagenet-multi-autoaugment
 
 echo "Run completed at:- "
 date
