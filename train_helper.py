@@ -435,12 +435,10 @@ class Transform:
         ])
 
         self.transform_supcon = transforms.Compose([
-            transforms.RandomResizedCrop(size=224, scale=(0.2, 1.)),
+            transforms.RandomResizedCrop(size=224, scale=(0.08, 1.)),
             transforms.RandomHorizontalFlip(),
-            transforms.RandomApply([
-                transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-            ], p=0.8),
-            transforms.RandomGrayscale(p=0.2),
+            transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.IMAGENET, interpolation=transforms.INTERPOLATIONMODE.BILINEAR),
+            transforms.RandomApply([transforms.GaussianBlur(kernel_size=224//20*2+1, sigma=(0.1, 2.0))], p=0.5),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                         std=[0.229, 0.224, 0.225])
