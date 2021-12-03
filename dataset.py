@@ -110,6 +110,33 @@ def color_grayscale_arr(arr, red=True):
                           np.zeros((h, w, 1), dtype=dtype)], axis=2)
   return arr
 
+def color10_grayscale_arr(arr, color=None):
+  """Converts grayscale image to either red or green"""
+  assert arr.ndim == 2
+  dtype = arr.dtype
+  h, w = arr.shape
+  arr = np.reshape(arr, [h, w, 1])
+  if color == 'red':
+    arr = np.concatenate([arr,
+                          np.zeros((h, w, 2), dtype=dtype)], axis=2)
+  elif color == 'green':
+    arr = np.concatenate([np.zeros((h, w, 1), dtype=dtype),
+                          arr,
+                          np.zeros((h, w, 1), dtype=dtype)], axis=2)
+  elif color == 'blue':
+    arr = np.concatenate([np.zeros((h, w, 2), dtype=dtype),
+                          arr], axis=2) 
+  elif color == 'yellow':
+    arr = np.concatenate([arr,
+                          arr,
+                          np.zeros((h, w, 1), dtype=dtype)], axis=2)     
+  elif color == 'cyan':
+    arr = np.concatenate([np.zeros((h, w, 1), dtype=dtype),
+                          arr,
+                          arr], axis=2)    
+
+  return arr
+
 
 class ColoredMNIST(datasets.VisionDataset):
   """
