@@ -249,3 +249,29 @@ class ColoredMNIST(datasets.VisionDataset):
     torch.save(train1_set, os.path.join(colored_mnist_dir, 'train1.pt'))
     torch.save(train2_set, os.path.join(colored_mnist_dir, 'train2.pt'))
     torch.save(test_set, os.path.join(colored_mnist_dir, 'test.pt'))
+
+class ColoredDataset(Dataset):
+    def __init__(self, dataset, classes=None, colors=[0, 1], std=0, color_labels=None):
+        self.dataset = dataset
+        self.colors = colors
+        self.color_labels = color_labels
+        if classes is None:
+            classes = max([y for _, y in dataset]) + 1
+
+        if isinstance(colors, torch.Tensor):
+            self.colors = colors
+        elif isinstance(colors, list):
+            self.colors = torch.Tensor(classes, 3, 1, 1).uniform_(colors[0], colors[1])
+        else:
+            raise ValueError('Unsupported colors!')
+        self.perturb = std * torch.randn(len(self.dataset), 3, 1, 1)
+    
+    def __len__(self):
+        return len(self.dataset)
+    
+    def __getitem__(self, idx):
+        img, label = self.dataset[idx]
+        color_img = (self.colors[label] + self.perturb[idx]).clamp(0, 1) * img
+        color_label = self.color_labels[label]
+
+        return color_img, label, color_label

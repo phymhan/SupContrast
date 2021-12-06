@@ -12,12 +12,13 @@ from torch import nn, optim
 from PIL import Image, ImageOps, ImageFilter
 from torch import nn, optim
 import torchvision
+from torchvision import datasets
 import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
 
-from dataset import ColoredMNIST
+from dataset import ColoredDataset
 from dist_utils import gather_from_all, init_distributed_mode, get_rank, is_main_process, get_world_size
 
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
@@ -46,15 +47,30 @@ def main_worker(args):
     global_rank = get_rank()
 
     _logger.info('Creating dataset')
-    dataset = ColoredMNIST(args.data, env='all_train', transform=Transform(args))
-    sampler = torch.utils.data.distributed.DistributedSampler(dataset, drop_last=False)
+    og_dataset_train = datasets.MNIST(args.data, train=True, download=True, transform=Transform(args))
+    og_dataset_test = datasets.MNIST(args.data, train=False, download=True, transform=Transform(args))
+
+    train_dataset = ColoredDataset(og_dataset_train, classes=args.num_colors, colors=[0, 1], std=args.color_std, color_labels=torch.arange(args.num_colors))
+    test_perm = torch.randperm(args.num_colors)
+    test_dataset = ColoredDataset(og_dataset_test, classes=args.num_colors, colors=train_dataset.colors[test_perm], std=args.color_std, color_labels=torch.arange(args.num_colors)[test_perm])
+
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, drop_last=False)
     assert args.batch_size % args.world_size == 0
     per_device_batch_size = args.batch_size // args.world_size
-    loader = torch.utils.data.DataLoader(
-        dataset, batch_size=per_device_batch_size, num_workers=args.workers,
-        pin_memory=True, sampler=sampler)
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=per_device_batch_size, num_workers=args.workers,
+        pin_memory=True, sampler=train_sampler)
 
-    sampler.set_epoch(0)
+    train_sampler.set_epoch(0)
+
+    test_sampler = torch.utils.data.distributed.DistributedSampler(test_dataset, drop_last=False)
+    assert args.batch_size % args.world_size == 0
+    per_device_batch_size = args.batch_size // args.world_size
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset, batch_size=per_device_batch_size, num_workers=args.workers,
+        pin_memory=True, sampler=test_sampler)
+
+    test_sampler.set_epoch(0)
 
     _logger.info('Creating model')
     model = SimCLR(args).to(device)
@@ -80,20 +96,20 @@ def main_worker(args):
 
     start_time = time.time()
     scaler = torch.cuda.amp.GradScaler()
-    itr = start_epoch * len(loader)
+    itr = start_epoch * len(train_loader)
 
     _logger.info('Starting training')
     for epoch in range(start_epoch, args.epochs):
         _logger.info(f'Starting training epoch {epoch}')
-        sampler.set_epoch(epoch)
+        train_sampler.set_epoch(epoch)
         
-        for step, ((y1, y2), digit_labels, color_labels) in enumerate(loader, start=epoch * len(loader)):
+        for step, ((y1, y2), digit_labels, color_labels) in enumerate(train_loader, start=epoch * len(train_loader)):
             itr_start = time.time()
             itr += 1
             y1 = y1.to(device, non_blocking=True)
             y2 = y2.to(device, non_blocking=True)
 
-            lr = adjust_learning_rate(args, optimizer, loader, step)
+            lr = adjust_learning_rate(args, optimizer, train_loader, step)
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
                 infonce_loss, reg_loss, clf_loss, digit_acc1, digit_acc2, color_acc1, color_acc2 = model.forward(y1, y2, digit_labels, color_labels, lamb=args.lamb)
@@ -146,11 +162,6 @@ def main_worker(args):
                         projector=model_without_ddp.projector.state_dict(),
                         head=model_without_ddp.onne_head.state_dict()),
                     args.checkpoint_dir + args.name + '-resnet18.pth')
-
-        # torch.save(dict(backbone=model.module.backbone.state_dict(),
-        #                 projector=model.module.projector.state_dict(),
-        #                 head=model.module.onne_head.state_dict()),
-        #             args.checkpoint_dir / (str(epoch) + '_checkpoint.pth'))
 
 def adjust_learning_rate(args, optimizer, loader, step):
     max_steps = args.epochs * len(loader)

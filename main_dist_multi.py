@@ -53,6 +53,10 @@ parser.add_argument('--dim', default=128, type=int)
 parser.add_argument('--layer', default=3, type=int)
 parser.add_argument('--temp', default=0.1, type=float)
 
+# colored dataset variations
+parser.add_argument('--num_colors', default=10, type=int, help='Number of colors for dataset')
+parser.add_argument('--std', default=0.0, type=float, help='Std dev of noise added onto the color')
+
 class Trainer(object):
     def __init__(self, args):
         self.args = args
