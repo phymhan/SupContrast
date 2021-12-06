@@ -34,9 +34,9 @@ parser.add_argument('--print-freq', default=10, type=int, metavar='N',
 parser.add_argument('--checkpoint-dir', default='/anonymous/', type=Path,
                     metavar='DIR', help='path to checkpoint directory')
 parser.add_argument('--log-dir', type=str, default='./logs/')
-parser.add_argument('--top5-path', type=str, default='./imagenet_resnet50_top10.pkl')
-parser.add_argument('--topk', type=int, default=5, help='K top prediction classes to use for mask creation')
 parser.add_argument('--lamb', type=float, default=1.0, help='Lambda for kernel regularization between f and g')
+parser.add_argument('--train_stage2', action='store_true', default=False,
+                    help='Run only stage 2 (g training with f frozen) training')
 parser.add_argument('--name', type=str, default='test')
 parser.add_argument('--seed', type=int, default=21)
 
@@ -54,7 +54,7 @@ parser.add_argument('--layer', default=3, type=int)
 parser.add_argument('--temp', default=0.1, type=float)
 
 # colored dataset variations
-parser.add_argument('--num_colors', default=10, type=int, help='Number of colors for dataset')
+parser.add_argument('--num-colors', default=10, type=int, help='Number of colors for dataset')
 parser.add_argument('--std', default=0.0, type=float, help='Std dev of noise added onto the color')
 
 class Trainer(object):

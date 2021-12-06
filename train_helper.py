@@ -6,6 +6,7 @@ import math
 import random
 import json
 import copy
+from itertools import chain
 
 import torch
 from torch import nn, optim
@@ -43,16 +44,16 @@ def main_worker(args):
         except:
             tb_logger = SummaryWriter(args.log_dir + args.name + '1')
 
-    num_tasks = get_world_size()
-    global_rank = get_rank()
+    # num_tasks = get_world_size()
+    # global_rank = get_rank()
 
     _logger.info('Creating dataset')
     og_dataset_train = datasets.MNIST(args.data, train=True, download=True, transform=Transform(args))
     og_dataset_test = datasets.MNIST(args.data, train=False, download=True, transform=Transform(args))
 
     train_dataset = ColoredDataset(og_dataset_train, classes=args.num_colors, colors=[0, 1], std=args.color_std, color_labels=torch.arange(args.num_colors))
-    test_perm = torch.randperm(args.num_colors)
-    test_dataset = ColoredDataset(og_dataset_test, classes=args.num_colors, colors=train_dataset.colors[test_perm], std=args.color_std, color_labels=torch.arange(args.num_colors)[test_perm])
+    # test_perm = torch.randperm(args.num_colors)
+    # test_dataset = ColoredDataset(og_dataset_test, classes=args.num_colors, colors=train_dataset.colors[test_perm], std=args.color_std, color_labels=torch.arange(args.num_colors)[test_perm])
 
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, drop_last=False)
     assert args.batch_size % args.world_size == 0
@@ -63,20 +64,22 @@ def main_worker(args):
 
     train_sampler.set_epoch(0)
 
-    test_sampler = torch.utils.data.distributed.DistributedSampler(test_dataset, drop_last=False)
-    assert args.batch_size % args.world_size == 0
-    per_device_batch_size = args.batch_size // args.world_size
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset, batch_size=per_device_batch_size, num_workers=args.workers,
-        pin_memory=True, sampler=test_sampler)
+    # test_sampler = torch.utils.data.distributed.DistributedSampler(test_dataset, drop_last=False)
+    # assert args.batch_size % args.world_size == 0
+    # per_device_batch_size = args.batch_size // args.world_size
+    # test_loader = torch.utils.data.DataLoader(
+    #     test_dataset, batch_size=per_device_batch_size, num_workers=args.workers,
+    #     pin_memory=True, sampler=test_sampler)
 
-    test_sampler.set_epoch(0)
+    # test_sampler.set_epoch(0)
 
-    _logger.info('Creating model')
-    model = SimCLR(args).to(device)
-    model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
-    model_without_ddp = model.module
+    is_stage2 = False
+    stage = 'stage1' if not is_stage2 else 'stage2'
+    _logger.info(f'Creating {stage} model')
+    model_stage1 = SimCLR(args, is_stage2=is_stage2).to(device)
+    model_stage1 = nn.SyncBatchNorm.convert_sync_batchnorm(model_stage1)
+    model = torch.nn.parallel.DistributedDataParallel(model_stage1, device_ids=[args.gpu])
+    model_stage1_without_ddp = model_stage1.module
 
     # optimizer = LARS(model.parameters(), lr=0, weight_decay=args.weight_decay,
     #                  weight_decay_filter=exclude_bias_and_norm,
@@ -84,24 +87,59 @@ def main_worker(args):
     optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # automatically resume from checkpoint if it exists
-    if (args.checkpoint_dir / 'checkpoint.pth').is_file():
+    if (args.checkpoint_dir / f'{stage}_checkpoint.pth').is_file():
         _logger.info('Resuming from checkpoint')
-        ckpt = torch.load(args.checkpoint_dir / 'checkpoint.pth',
+        ckpt = torch.load(args.checkpoint_dir / f'{stage}_checkpoint.pth',
                           map_location='cpu')
         start_epoch = ckpt['epoch']
-        model_without_ddp.load_state_dict(ckpt['model'])
+        model_stage1_without_ddp.load_state_dict(ckpt['model'])
         optimizer.load_state_dict(ckpt['optimizer'])
     else:
         start_epoch = 0
 
+    # Stage 1 training (f training)
+    if not args.train_stage2:
+        train(args, model_stage1, optimizer, train_loader, train_sampler, start_epoch, is_stage2, device, tb_logger)
+
+    # Stage 2 training (g training with f frozen)
+    is_stage2 = True
+    stage = 'stage1' if not is_stage2 else 'stage2'
+    _logger.info(f'Creating {stage} model')
+    model_stage2 = SimCLR(args, is_stage2=is_stage2, stage1_backbone=model_stage1_without_ddp.backbone1, stage1_projector=model_stage1_without_ddp.projector1).to(device)
+    model_stage2 = nn.SyncBatchNorm.convert_sync_batchnorm(model_stage2)
+    model_stage2 = torch.nn.parallel.DistributedDataParallel(model_stage2, device_ids=[args.gpu])
+    model_stage2_without_ddp = model_stage2.module
+
+    optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    # automatically resume from checkpoint if it exists
+    if (args.checkpoint_dir / f'{stage}_checkpoint.pth').is_file():
+        _logger.info('Resuming from checkpoint')
+        ckpt = torch.load(args.checkpoint_dir / f'{stage}_checkpoint.pth',
+                          map_location='cpu')
+        start_epoch = ckpt['epoch']
+        model_stage2_without_ddp.load_state_dict(ckpt['model'])
+        optimizer.load_state_dict(ckpt['optimizer'])
+    else:
+        start_epoch = 0
+    
+    train(args, model_stage2, optimizer, train_loader, train_sampler, start_epoch, is_stage2, device, tb_logger)
+
+def train(args, model, optimizer, train_loader, train_sampler, start_epoch, is_stage2, device, tb_logger):
+    model.train()
+    stage = 'stage1' if not is_stage2 else 'stage2'
     start_time = time.time()
     scaler = torch.cuda.amp.GradScaler()
     itr = start_epoch * len(train_loader)
+    model_without_ddp = model.module
 
     _logger.info('Starting training')
     for epoch in range(start_epoch, args.epochs):
-        _logger.info(f'Starting training epoch {epoch}')
-        train_sampler.set_epoch(epoch)
+        _logger.info(f'Starting {stage} training epoch {epoch}')
+        if not is_stage2:
+            train_sampler.set_epoch(epoch)
+        else:
+            train_sampler.set_epoch(epoch+args.epochs)
         
         for step, ((y1, y2), digit_labels, color_labels) in enumerate(train_loader, start=epoch * len(train_loader)):
             itr_start = time.time()
@@ -112,9 +150,8 @@ def main_worker(args):
             lr = adjust_learning_rate(args, optimizer, train_loader, step)
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
-                infonce_loss, reg_loss, clf_loss, digit_acc1, digit_acc2, color_acc1, color_acc2 = model.forward(y1, y2, digit_labels, color_labels, lamb=args.lamb)
+                infonce_loss, reg_loss, clf_loss, digit_acc1, color_acc1 = model.forward(y1, y2, digit_labels, color_labels, temp=args.temp, lamb=args.lamb)
                 loss = infonce_loss + reg_loss + clf_loss
-                # loss, acc = model.forward(y1, y2, neg_images=neg_y, labels=labels, neg_labels=neg_labels)
             
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -123,27 +160,22 @@ def main_worker(args):
             itr_time = itr_end - itr_start
             
             if is_main_process():
-                tb_logger.add_scalar('loss/total', loss.item(), itr)
-                tb_logger.add_scalar('loss/infonce', infonce_loss.item(), itr)
-                tb_logger.add_scalar('loss/reg', reg_loss.item(), itr)
-                tb_logger.add_scalar('loss/clf', clf_loss.item(), itr)
-                tb_logger.add_scalar('acc/f_digit_acc', digit_acc1.item(), itr)
-                tb_logger.add_scalar('acc/g_digit_acc', digit_acc2.item(), itr)
-                tb_logger.add_scalar('acc/f_color_acc', color_acc1.item(), itr)
-                tb_logger.add_scalar('acc/g_color_acc', color_acc2.item(), itr)
+                tb_logger.add_scalar(f'loss/{stage}_total', loss.item(), itr)
+                tb_logger.add_scalar(f'loss/{stage}_infonce', infonce_loss.item(), itr)
+                tb_logger.add_scalar(f'loss/{stage}_reg', reg_loss.item(), itr)
+                tb_logger.add_scalar(f'loss/{stage}_clf', clf_loss.item(), itr)
+                tb_logger.add_scalar(f'acc/{stage}_digit_acc', digit_acc1.item(), itr)
+                tb_logger.add_scalar(f'acc/{stage}_color_acc', color_acc1.item(), itr)
 
             if step % args.print_freq == 0:
                 torch.distributed.reduce(digit_acc1.div_(args.world_size), 0)
-                torch.distributed.reduce(digit_acc2.div_(args.world_size), 0)
                 torch.distributed.reduce(color_acc1.div_(args.world_size), 0)
-                torch.distributed.reduce(color_acc2.div_(args.world_size), 0)
                 if is_main_process():
-                    _logger.info(f'epoch={epoch}, step={step}, loss={loss.item()}, digit acc1={digit_acc1.item()}, digit acc2={digit_acc2.item()}, color acc1={color_acc1.item()}, color acc2={color_acc2.item()} itr time={itr_time}')
-                    stats = dict(epoch=epoch, step=step, learning_rate=lr,
-                                 loss=loss.item(), digit_acc1=digit_acc1.item(), digit_acc2=digit_acc2.item(),
-                                 color_acc1=color_acc1.item(), color_acc2=color_acc2.item(),
+                    _logger.info(f'stage={stage}, epoch={epoch}, step={step}, loss={loss.item()}, digit acc1={digit_acc1.item()}, color acc1={color_acc1.item()}, itr time={itr_time}')
+                    stats = dict(stage=stage, epoch=epoch, step=step, learning_rate=lr,
+                                 loss=loss.item(), digit_acc1=digit_acc1.item(), color_acc1=color_acc1.item(),
                                  time=int(time.time() - start_time))
-                    with open(args.checkpoint_dir / 'stats.txt', 'a') as stats_file:
+                    with open(args.checkpoint_dir / f'{stage}_stats.txt', 'a') as stats_file:
                         stats_file.write(json.dumps(stats) + "\n")
 
         if is_main_process():
@@ -151,9 +183,9 @@ def main_worker(args):
             _logger.info(f'Saved checkpoint {epoch}')
             state = dict(epoch=epoch + 1, model=model_without_ddp.state_dict(),
                          optimizer=optimizer.state_dict())
-            if (args.checkpoint_dir / 'checkpoint.pth').is_file():
-                os.rename(args.checkpoint_dir / 'checkpoint.pth', args.checkpoint_dir / f'checkpoint_{epoch}')
-            torch.save(state, args.checkpoint_dir / 'checkpoint.pth')
+            if (args.checkpoint_dir / f'{stage}_checkpoint.pth').is_file():
+                os.rename(args.checkpoint_dir / f'{stage}_checkpoint.pth', args.checkpoint_dir / f'{stage}_checkpoint_{epoch}')
+            torch.save(state, args.checkpoint_dir / f'{stage}_checkpoint.pth')
 
     if is_main_process():
         # save final model
@@ -161,7 +193,8 @@ def main_worker(args):
         torch.save(dict(backbone=model_without_ddp.backbone.state_dict(),
                         projector=model_without_ddp.projector.state_dict(),
                         head=model_without_ddp.onne_head.state_dict()),
-                    args.checkpoint_dir + args.name + '-resnet18.pth')
+                    args.checkpoint_dir + args.name + f'-{stage}-resnet18.pth')
+
 
 def adjust_learning_rate(args, optimizer, loader, step):
     max_steps = args.epochs * len(loader)
@@ -184,18 +217,27 @@ def adjust_learning_rate(args, optimizer, loader, step):
 
 
 class SimCLR(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, is_stage2=False, stage1_backbone=None, stage1_projector=None):
         super().__init__()
         self.args = args
+        self.is_stage2 = is_stage2
+
         self.backbone1 = torchvision.models.resnet18(zero_init_residual=True)
         self.backbone1.fc = nn.Identity()
 
-        self.backbone2 = torchvision.models.resnet18(zero_init_residual=True)
-        self.backbone2.fc = nn.Identity()
+        # Set models from stage 1 and freeze
+        if is_stage2:
+            self.backbone2 = stage1_backbone
+            self.projector2 = stage1_projector
+
+            self.backbone2.eval()
+            self.projector2.eval()
+
+            for p in chain(self.backbone2.parameters(), self.projector2.parameters()):
+                p.requires_grad = False
 
         # projector
         sizes = [512] * self.args.layer + [self.args.dim]
-        # sizes = [2048, 2048, 2048, self.args.dim]
         layers = []
         for i in range(len(sizes) - 2):
             layers.append(nn.Linear(sizes[i], sizes[i + 1], bias=False))
@@ -204,55 +246,45 @@ class SimCLR(nn.Module):
         layers.append(nn.Linear(sizes[-2], sizes[-1], bias=False))
         layers.append(nn.BatchNorm1d(sizes[-1]))
         self.projector1 = nn.Sequential(*layers)
-        self.projector2 = nn.Sequential(*copy.deepcopy(layers))
 
         self.onne_head_digit1 = nn.Linear(512, 10)
-        self.onne_head_digit2 = nn.Linear(512, 10)
-        self.onne_head_color1 = nn.Linear(512, 1)
-        self.onne_head_color2 = nn.Linear(512, 1)
+        self.onne_head_color1 = nn.Linear(512, 10)
         self.loss_fn = infoNCE_diverse
 
-    def forward(self, y1, y2, digit_labels=None, color_labels=None, lamb=1.0):
+    def forward(self, y1, y2, digit_labels=None, color_labels=None, temp=0.1, lamb=1.0):
         r1_1 = self.backbone1(y1)
         r1_2 = self.backbone1(y2)
-
-        r2_1 = self.backbone2(y1)
-        r2_2 = self.backbone2(y2)
 
         # projection
         z1_1 = self.projector1(r1_1)
         z1_2 = self.projector1(r1_2)
 
-        z2_1 = self.projector2(r2_1)
-        z2_2 = self.projector2(r2_2)
+        if not self.is_stage2:
+            loss, _ = self.loss_fn(z1_1, z1_2, temperature=temp)
+            reg_loss = 0.0
+        
+        else:
+            r2_1 = self.backbone2(y1)
+            r2_2 = self.backbone2(y2)
 
-        loss, reg_loss = self.loss_fn(z1_1, z1_2, z2_1, z2_2, lamb=lamb)
+            z2_1 = self.projector2(r2_1)
+            z2_2 = self.projector2(r2_2)
+
+            loss, reg_loss = self.loss_fn(z1_1, z1_2, z2_1, z2_2, temperature=temp, is_stage2=self.is_stage2, lamb=lamb)
 
         # Online classifier 
         logits_digit1 = self.onne_head_digit1(r1_1.detach())
-        logits_color1 = self.onne_head_color1(r1_1.detach()).squeeze()
-
-        logits_digit2 = self.onne_head_digit2(r2_1.detach())
-        logits_color2 = self.onne_head_color2(r2_1.detach()).squeeze()
+        logits_color1 = self.onne_head_color1(r1_1.detach())
 
         cls_digit_loss1 = torch.nn.functional.cross_entropy(logits_digit1, digit_labels)
-        cls_digit_loss2 = torch.nn.functional.cross_entropy(logits_digit2, digit_labels)
-
-        cls_color_loss1 = torch.nn.functional.binary_cross_entropy_with_logits(logits_color1.squeeze(), color_labels.float())
-        cls_color_loss2 = torch.nn.functional.binary_cross_entropy_with_logits(logits_color2.squeeze(), color_labels.float())
+        cls_color_loss1 = torch.nn.functional.cross_entropy(logits_color1, color_labels)
 
         digit_acc1 = torch.sum(torch.eq(torch.argmax(logits_digit1, dim=1), digit_labels)) / logits_digit1.size(0)
-        digit_acc2 = torch.sum(torch.eq(torch.argmax(logits_digit2, dim=1), digit_labels)) / logits_digit2.size(0)
+        color_acc1 = torch.sum(torch.eq(torch.argmax(logits_color1, dim=1), color_labels)) / logits_color1.size(0)
 
-        logits_color1 = (torch.sigmoid(logits_color1) > 0.5).float()
-        logits_color2 = (torch.sigmoid(logits_color2) > 0.5).float()
+        clf_loss = cls_digit_loss1 + cls_color_loss1
 
-        color_acc1 = torch.sum(logits_color1 == color_labels) / logits_color1.size(0)
-        color_acc2 = torch.sum(logits_color2 == color_labels) / logits_color2.size(0)
-
-        clf_loss = cls_digit_loss1 + cls_digit_loss2 + cls_color_loss1 + cls_color_loss2
-
-        return loss, reg_loss, clf_loss, digit_acc1, digit_acc2, color_acc1, color_acc2
+        return loss, reg_loss, clf_loss, digit_acc1, color_acc1
 
 
 def infoNCE(z1, z2, temperature=0.1):
@@ -267,25 +299,16 @@ def infoNCE(z1, z2, temperature=0.1):
     loss = torch.nn.functional.cross_entropy(logits, labels)
     return loss
 
-def infoNCE_diverse(z1_1, z1_2, z2_1, z2_2, temperature=0.1, lamb=1.0):
+def infoNCE_diverse(z1_1, z1_2, z2_1=None, z2_2=None, temperature=0.1, is_stage2=False, lamb=1.0):
     z1_1 = torch.nn.functional.normalize(z1_1, dim=1)
     z1_2 = torch.nn.functional.normalize(z1_2, dim=1)
-    z2_1 = torch.nn.functional.normalize(z2_1, dim=1)
-    z2_2 = torch.nn.functional.normalize(z2_2, dim=1)
-
     z1_1 = gather_from_all(z1_1)
     z1_2 = gather_from_all(z1_2)
-    z2_1 = gather_from_all(z2_1)
-    z2_2 = gather_from_all(z2_2)
 
     z1 = torch.cat([z1_1, z1_2], dim=0)
-    z2 = torch.cat([z2_1, z2_2], dim=0)
 
     sim_matrix1 = z1 @ z1.T
     sim_matrix1 /= temperature
-
-    sim_matrix2 = z2 @ z2.T
-    sim_matrix2 /= temperature
 
     bs = z1_1.shape[0]
     n_views = 2
@@ -300,10 +323,22 @@ def infoNCE_diverse(z1_1, z1_2, z2_1, z2_2, temperature=0.1, lamb=1.0):
     labels = torch.argmax(labels, dim=1)
 
     sim_matrix1 = sim_matrix1[~mask].view(sim_matrix1.shape[0], -1)
-    sim_matrix2 = sim_matrix2[~mask].view(sim_matrix2.shape[0], -1)
+    loss = torch.nn.functional.cross_entropy(sim_matrix1, labels.long())
+    
+    reg_loss = 0.0
 
-    loss = torch.nn.functional.cross_entropy(sim_matrix1, labels.long()) + torch.nn.functional.cross_entropy(sim_matrix2, labels.long())
-    reg_loss = -1.0 * lamb * torch.nn.functional.l1_loss(torch.exp(sim_matrix1), torch.exp(sim_matrix2))
+    if is_stage2:
+        z2_1 = torch.nn.functional.normalize(z2_1, dim=1)
+        z2_2 = torch.nn.functional.normalize(z2_2, dim=1)
+        z2_1 = gather_from_all(z2_1)
+        z2_2 = gather_from_all(z2_2)
+        z2 = torch.cat([z2_1, z2_2], dim=0)
+        sim_matrix2 = z2 @ z2.T
+        sim_matrix2 /= temperature
+
+        sim_matrix2 = sim_matrix2[~mask].view(sim_matrix2.shape[0], -1)
+
+        reg_loss = -1.0 * lamb * torch.nn.functional.l1_loss(torch.exp(sim_matrix1), torch.exp(sim_matrix2))
 
     return loss, reg_loss
 

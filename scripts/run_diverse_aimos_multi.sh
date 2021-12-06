@@ -20,10 +20,13 @@ python \
       --batch-size 384 \
       --learning-rate 0.5 \
       --temp 0.1 \
+      --std 0.0 \
+      --num-colors 10 \
+      --lamb 0.01 \
       --print-freq 50 \
       --checkpoint-dir $HOME2/scratch/diverse/SupContrast/results/ \
       --log-dir $HOME2/scratch/diverse/SupContrast/logs/ \
-      --name infonce-diverse
+      --name infonce-diverse-sequential-lambda0.01
 
 echo "Run completed at:- "
 date
