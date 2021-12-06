@@ -78,13 +78,13 @@ def main_worker(args):
     _logger.info(f'Creating {stage} model')
     model_stage1 = SimCLR(args, is_stage2=is_stage2).to(device)
     model_stage1 = nn.SyncBatchNorm.convert_sync_batchnorm(model_stage1)
-    model = torch.nn.parallel.DistributedDataParallel(model_stage1, device_ids=[args.gpu])
+    model_stage1 = torch.nn.parallel.DistributedDataParallel(model_stage1, device_ids=[args.gpu])
     model_stage1_without_ddp = model_stage1.module
 
     # optimizer = LARS(model.parameters(), lr=0, weight_decay=args.weight_decay,
     #                  weight_decay_filter=exclude_bias_and_norm,
     #                  lars_adaptation_filter=exclude_bias_and_norm)
-    optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
+    optimizer = optim.SGD(model_stage1.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # automatically resume from checkpoint if it exists
     if (args.checkpoint_dir / f'{stage}_checkpoint.pth').is_file():
@@ -110,7 +110,7 @@ def main_worker(args):
     model_stage2 = torch.nn.parallel.DistributedDataParallel(model_stage2, device_ids=[args.gpu])
     model_stage2_without_ddp = model_stage2.module
 
-    optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
+    optimizer = optim.SGD(model_stage2.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # automatically resume from checkpoint if it exists
     if (args.checkpoint_dir / f'{stage}_checkpoint.pth').is_file():
