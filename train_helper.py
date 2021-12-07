@@ -187,14 +187,14 @@ def train(args, model, optimizer, train_loader, train_sampler, start_epoch, is_s
                 os.rename(args.checkpoint_dir / f'{stage}_checkpoint.pth', args.checkpoint_dir / f'{stage}_checkpoint_{epoch}')
             torch.save(state, args.checkpoint_dir / f'{stage}_checkpoint.pth')
 
-    if is_main_process():
-        # save final model
-        _logger.info(f'Saved final checkpoint')
-        torch.save(dict(backbone=model_without_ddp.backbone1.state_dict(),
-                        projector=model_without_ddp.projector1.state_dict(),
-                        digit_head=model_without_ddp.onne_head_digit1.state_dict(),
-                        color_head=model_without_ddp.onne_head_color1.state_dict()),
-                    args.checkpoint_dir + args.name + f'-{stage}-resnet18.pth')
+    # if is_main_process():
+    #     # save final model
+    #     _logger.info(f'Saved final checkpoint')
+    #     torch.save(dict(backbone=model_without_ddp.backbone1.state_dict(),
+    #                     projector=model_without_ddp.projector1.state_dict(),
+    #                     digit_head=model_without_ddp.onne_head_digit1.state_dict(),
+    #                     color_head=model_without_ddp.onne_head_color1.state_dict()),
+    #                 args.checkpoint_dir + args.name + f'-{stage}-resnet18.pth')
 
 
 def adjust_learning_rate(args, optimizer, loader, step):
