@@ -21,6 +21,7 @@ import numpy as np
 
 from dataset import ColoredDataset
 from dist_utils import gather_from_all, init_distributed_mode, get_rank, is_main_process, get_world_size
+from util import AverageMeter
 
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 _logger = logging.getLogger('train')
@@ -52,8 +53,8 @@ def main_worker(args):
     og_dataset_test = datasets.MNIST(args.data, train=False, download=True, transform=Transform(args))
 
     train_dataset = ColoredDataset(og_dataset_train, classes=args.num_colors, colors=[0, 1], std=args.color_std, color_labels=torch.arange(args.num_colors))
-    # test_perm = torch.randperm(args.num_colors)
-    # test_dataset = ColoredDataset(og_dataset_test, classes=args.num_colors, colors=train_dataset.colors[test_perm], std=args.color_std, color_labels=torch.arange(args.num_colors)[test_perm])
+    test_perm = torch.randperm(args.num_colors)
+    test_dataset = ColoredDataset(og_dataset_test, classes=args.num_colors, colors=train_dataset.colors[test_perm], std=args.color_std, color_labels=torch.arange(args.num_colors)[test_perm])
 
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, drop_last=False)
     assert args.batch_size % args.world_size == 0
@@ -64,14 +65,21 @@ def main_worker(args):
 
     train_sampler.set_epoch(0)
 
-    # test_sampler = torch.utils.data.distributed.DistributedSampler(test_dataset, drop_last=False)
-    # assert args.batch_size % args.world_size == 0
-    # per_device_batch_size = args.batch_size // args.world_size
-    # test_loader = torch.utils.data.DataLoader(
-    #     test_dataset, batch_size=per_device_batch_size, num_workers=args.workers,
-    #     pin_memory=True, sampler=test_sampler)
+    test_sampler = torch.utils.data.distributed.DistributedSampler(test_dataset, drop_last=False)
+    assert args.batch_size % args.world_size == 0
+    per_device_batch_size = args.batch_size // args.world_size
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset, batch_size=per_device_batch_size, num_workers=args.workers,
+        pin_memory=True, sampler=test_sampler)
 
-    # test_sampler.set_epoch(0)
+    test_sampler.set_epoch(0)
+
+    # Saving colors and random permutation for test dataset
+    torch.save({
+        'train_colors': train_dataset.colors,
+        'test_colors': test_dataset.colors,
+        'test_perm': test_perm,
+    }, args.checkpoint_dir / 'colors.pt')
 
     is_stage2 = False
     stage = 'stage1' if not is_stage2 else 'stage2'
@@ -100,6 +108,7 @@ def main_worker(args):
     # Stage 1 training (f training)
     if not args.train_stage2:
         train(args, model_stage1, optimizer, train_loader, train_sampler, start_epoch, is_stage2, device, tb_logger)
+        test(args, model_stage1, test_loader, is_stage2, device, tb_logger)
 
     # Stage 2 training (g training with f frozen)
     is_stage2 = True
@@ -124,6 +133,7 @@ def main_worker(args):
         start_epoch = 0
     
     train(args, model_stage2, optimizer, train_loader, train_sampler, start_epoch, is_stage2, device, tb_logger)
+    test(args, model_stage2, test_loader, is_stage2, device, tb_logger)
 
 def train(args, model, optimizer, train_loader, train_sampler, start_epoch, is_stage2, device, tb_logger):
     model.train()
@@ -187,14 +197,55 @@ def train(args, model, optimizer, train_loader, train_sampler, start_epoch, is_s
                 os.rename(args.checkpoint_dir / f'{stage}_checkpoint.pth', args.checkpoint_dir / f'{stage}_checkpoint_{epoch}')
             torch.save(state, args.checkpoint_dir / f'{stage}_checkpoint.pth')
 
-    # if is_main_process():
-    #     # save final model
-    #     _logger.info(f'Saved final checkpoint')
-    #     torch.save(dict(backbone=model_without_ddp.backbone1.state_dict(),
-    #                     projector=model_without_ddp.projector1.state_dict(),
-    #                     digit_head=model_without_ddp.onne_head_digit1.state_dict(),
-    #                     color_head=model_without_ddp.onne_head_color1.state_dict()),
-    #                 args.checkpoint_dir + args.name + f'-{stage}-resnet18.pth')
+def test(args, model, test_loader, is_stage2, device, tb_logger):
+    model.eval()
+    stage = 'stage1' if not is_stage2 else 'stage2'
+
+    color_metric = AverageMeter()
+    digit_metric = AverageMeter()
+    infonce_loss_metric = AverageMeter()
+    clf_loss_metric = AverageMeter()
+    reg_loss_metric = AverageMeter()
+    loss_metric = AverageMeter()
+
+    _logger.info(f'Starting testing {stage}')
+    
+    with torch.no_grad():
+        for step, ((y1, y2), digit_labels, color_labels) in enumerate(test_loader):
+            y1 = y1.to(device, non_blocking=True)
+            y2 = y2.to(device, non_blocking=True)
+
+            with torch.cuda.amp.autocast():
+                infonce_loss, reg_loss, clf_loss, digit_acc1, color_acc1 = model.forward(y1, y2, digit_labels, color_labels, temp=args.temp, lamb=args.lamb)
+                loss = infonce_loss + reg_loss + clf_loss
+            
+                torch.distributed.reduce(loss.div_(args.world_size), 0)
+                torch.distributed.reduce(infonce_loss.div_(args.world_size), 0)
+                torch.distributed.reduce(reg_loss.div_(args.world_size), 0)
+                torch.distributed.reduce(clf_loss.div_(args.world_size), 0)
+                torch.distributed.reduce(digit_acc1.div_(args.world_size), 0)
+                torch.distributed.reduce(color_acc1.div_(args.world_size), 0)
+
+                bs = y1.shape[0]
+                loss_metric.update(loss.item(), bs)
+                infonce_loss_metric.update(infonce_loss.item(), bs)
+                reg_loss_metric.update(reg_loss.item(), bs)
+                clf_loss_metric.update(clf_loss.item(), bs)
+                digit_metric.update(digit_acc1.item(), bs)
+                color_metric.update(color_acc1.item(), bs)
+
+        if is_main_process():
+            tb_logger.add_scalar(f'loss/test/{stage}_total', loss_metric.avg)
+            tb_logger.add_scalar(f'loss/test/{stage}_infonce', infonce_loss_metric.avg)
+            tb_logger.add_scalar(f'loss/test/{stage}_reg', reg_loss_metric.avg)
+            tb_logger.add_scalar(f'loss/test/{stage}_clf', clf_loss_metric.avg)
+            tb_logger.add_scalar(f'acc/test/{stage}_digit_acc', digit_metric.avg)
+            tb_logger.add_scalar(f'acc/test/{stage}_color_acc', color_metric.avg)
+
+            _logger.info(f'TEST stage={stage}, loss={loss_metric.avg}, digit acc1={digit_metric.avg}, color acc1={color_metric.avg}')
+            stats = dict(stage=stage, loss=loss_metric.avg, digit_acc1=digit_metric.avg, color_acc1=color_metric.avg)
+            with open(args.checkpoint_dir / f'test_{stage}_stats.txt', 'a') as stats_file:
+                stats_file.write(json.dumps(stats) + "\n")
 
 
 def adjust_learning_rate(args, optimizer, loader, step):
