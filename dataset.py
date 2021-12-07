@@ -270,8 +270,9 @@ class ColoredDataset(Dataset):
         return len(self.dataset)
     
     def __getitem__(self, idx):
-        img, label = self.dataset[idx]
-        color_img = (self.colors[label] + self.perturb[idx]).clamp(0, 1) * img
+        img1, img2, label = self.dataset[idx]
+        color_img1 = (self.colors[label] + self.perturb[idx]).clamp(0, 1) * img1
+        color_img2 = (self.colors[label] + self.perturb[idx]).clamp(0, 1) * img2
         color_label = self.color_labels[label]
 
-        return color_img, label, color_label
+        return (color_img1, color_img2), label, color_label
