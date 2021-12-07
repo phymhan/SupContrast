@@ -190,9 +190,10 @@ def train(args, model, optimizer, train_loader, train_sampler, start_epoch, is_s
     if is_main_process():
         # save final model
         _logger.info(f'Saved final checkpoint')
-        torch.save(dict(backbone=model_without_ddp.backbone.state_dict(),
-                        projector=model_without_ddp.projector.state_dict(),
-                        head=model_without_ddp.onne_head.state_dict()),
+        torch.save(dict(backbone=model_without_ddp.backbone1.state_dict(),
+                        projector=model_without_ddp.projector1.state_dict(),
+                        digit_head=model_without_ddp.onne_head_digit1.state_dict(),
+                        color_head=model_without_ddp.onne_head_color1.state_dict()),
                     args.checkpoint_dir + args.name + f'-{stage}-resnet18.pth')
 
 
