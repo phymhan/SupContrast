@@ -37,7 +37,7 @@ def main_worker(args):
     random.seed(seed)
 
     torch.backends.cudnn.benchmark = True
-
+    tb_logger = None
     if is_main_process():
         try:
             tb_logger = SummaryWriter(args.log_dir + args.name)
