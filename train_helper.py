@@ -261,7 +261,7 @@ class SimCLR(nn.Module):
 
         if not self.is_stage2:
             loss, _ = self.loss_fn(z1_1, z1_2, temperature=temp)
-            reg_loss = 0.0
+            reg_loss = torch.Tensor([0.0])
         
         else:
             r2_1 = self.backbone2(y1)
@@ -325,7 +325,7 @@ def infoNCE_diverse(z1_1, z1_2, z2_1=None, z2_2=None, temperature=0.1, is_stage2
     sim_matrix1 = sim_matrix1[~mask].view(sim_matrix1.shape[0], -1)
     loss = torch.nn.functional.cross_entropy(sim_matrix1, labels.long())
     
-    reg_loss = 0.0
+    reg_loss = torch.Tensor([0.0])
 
     if is_stage2:
         z2_1 = torch.nn.functional.normalize(z2_1, dim=1)
