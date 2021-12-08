@@ -140,8 +140,8 @@ def main_worker(args):
     model_stage3 = SimCLR(args, stage=stage, 
                           stage1_backbone=model_stage1_without_ddp.backbone1, stage1_projector=model_stage1_without_ddp.projector1,
                           stage2_backbone=model_stage2_without_ddp.backbone1, stage2_projector=model_stage2_without_ddp.projector1).to(device)
-    model_stage3 = nn.SyncBatchNorm.convert_sync_batchnorm(model_stage2)
-    model_stage3 = torch.nn.parallel.DistributedDataParallel(model_stage2, device_ids=[args.gpu])
+    model_stage3 = nn.SyncBatchNorm.convert_sync_batchnorm(model_stage3)
+    model_stage3 = torch.nn.parallel.DistributedDataParallel(model_stage3, device_ids=[args.gpu])
     model_stage3_without_ddp = model_stage3.module
 
     optimizer = optim.SGD(model_stage3.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
