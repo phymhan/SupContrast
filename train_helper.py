@@ -144,7 +144,7 @@ def main_worker(args):
     model_stage3 = torch.nn.parallel.DistributedDataParallel(model_stage2, device_ids=[args.gpu])
     model_stage3_without_ddp = model_stage3.module
 
-    optimizer = optim.SGD(model_stage2.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
+    optimizer = optim.SGD(model_stage3.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # automatically resume from checkpoint if it exists
     if (args.checkpoint_dir / f'{stage}_checkpoint.pth').is_file():
