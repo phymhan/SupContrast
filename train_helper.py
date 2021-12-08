@@ -81,10 +81,9 @@ def main_worker(args):
         'test_perm': test_perm,
     }, args.checkpoint_dir / 'colors.pt')
 
-    is_stage2 = False
-    stage = 'stage1' if not is_stage2 else 'stage2'
+    stage = 'stage1'
     _logger.info(f'Creating {stage} model')
-    model_stage1 = SimCLR(args, is_stage2=is_stage2).to(device)
+    model_stage1 = SimCLR(args, stage=stage).to(device)
     model_stage1 = nn.SyncBatchNorm.convert_sync_batchnorm(model_stage1)
     model_stage1 = torch.nn.parallel.DistributedDataParallel(model_stage1, device_ids=[args.gpu])
     model_stage1_without_ddp = model_stage1.module
@@ -106,15 +105,14 @@ def main_worker(args):
         start_epoch = 0
 
     # Stage 1 training (f training)
-    if not args.train_stage2:
-        train(args, model_stage1, optimizer, train_loader, train_sampler, start_epoch, is_stage2, device, tb_logger)
-        test(args, model_stage1, test_loader, is_stage2, device, tb_logger)
+    if args.train_stage1:
+        train(args, model_stage1, optimizer, train_loader, train_sampler, start_epoch, stage, device, tb_logger)
+        test(args, model_stage1, test_loader, stage, device, tb_logger)
 
     # Stage 2 training (g training with f frozen)
-    is_stage2 = True
-    stage = 'stage1' if not is_stage2 else 'stage2'
+    stage = 'stage2'
     _logger.info(f'Creating {stage} model')
-    model_stage2 = SimCLR(args, is_stage2=is_stage2, stage1_backbone=model_stage1_without_ddp.backbone1, stage1_projector=model_stage1_without_ddp.projector1).to(device)
+    model_stage2 = SimCLR(args, stage=stage, stage1_backbone=model_stage1_without_ddp.backbone1, stage1_projector=model_stage1_without_ddp.projector1).to(device)
     model_stage2 = nn.SyncBatchNorm.convert_sync_batchnorm(model_stage2)
     model_stage2 = torch.nn.parallel.DistributedDataParallel(model_stage2, device_ids=[args.gpu])
     model_stage2_without_ddp = model_stage2.module
@@ -132,12 +130,41 @@ def main_worker(args):
     else:
         start_epoch = 0
     
-    train(args, model_stage2, optimizer, train_loader, train_sampler, start_epoch, is_stage2, device, tb_logger)
-    test(args, model_stage2, test_loader, is_stage2, device, tb_logger)
+    if args.train_stage2:
+        train(args, model_stage2, optimizer, train_loader, train_sampler, start_epoch, stage, device, tb_logger)
+        test(args, model_stage2, test_loader, stage, device, tb_logger)
+    
+    # Stage 3 (h training with f, g frozen)
+    stage = 'stage3'
+    _logger.info(f'Creating {stage} model')
+    model_stage3 = SimCLR(args, stage=stage, 
+                          stage1_backbone=model_stage1_without_ddp.backbone1, stage1_projector=model_stage1_without_ddp.projector1,
+                          stage2_backbone=model_stage2_without_ddp.backbone1, stage2_projector=model_stage2_without_ddp.projector1).to(device)
+    model_stage3 = nn.SyncBatchNorm.convert_sync_batchnorm(model_stage2)
+    model_stage3 = torch.nn.parallel.DistributedDataParallel(model_stage2, device_ids=[args.gpu])
+    model_stage3_without_ddp = model_stage3.module
 
-def train(args, model, optimizer, train_loader, train_sampler, start_epoch, is_stage2, device, tb_logger):
+    optimizer = optim.SGD(model_stage2.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    # automatically resume from checkpoint if it exists
+    if (args.checkpoint_dir / f'{stage}_checkpoint.pth').is_file():
+        _logger.info('Resuming from checkpoint')
+        ckpt = torch.load(args.checkpoint_dir / f'{stage}_checkpoint.pth',
+                          map_location='cpu')
+        start_epoch = ckpt['epoch']
+        model_stage3_without_ddp.load_state_dict(ckpt['model'])
+        optimizer.load_state_dict(ckpt['optimizer'])
+    else:
+        start_epoch = 0
+
+    # Stage 3 training    
+    if args.train_stage3:
+        train(args, model_stage3, optimizer, train_loader, train_sampler, start_epoch, stage, device, tb_logger)
+        test(args, model_stage3, test_loader, stage, device, tb_logger)
+
+
+def train(args, model, optimizer, train_loader, train_sampler, start_epoch, stage, device, tb_logger):
     model.train()
-    stage = 'stage1' if not is_stage2 else 'stage2'
     start_time = time.time()
     scaler = torch.cuda.amp.GradScaler()
     itr = start_epoch * len(train_loader)
@@ -146,10 +173,12 @@ def train(args, model, optimizer, train_loader, train_sampler, start_epoch, is_s
     _logger.info('Starting training')
     for epoch in range(start_epoch, args.epochs):
         _logger.info(f'Starting {stage} training epoch {epoch}')
-        if not is_stage2:
+        if stage == 'stage1':
             train_sampler.set_epoch(epoch)
-        else:
+        elif stage == 'stage2':
             train_sampler.set_epoch(epoch+args.epochs)
+        elif stage == 'stage3':
+            train_sampler.set_epoch(epoch+args.epochs*2)
         
         for step, ((y1, y2), digit_labels, color_labels) in enumerate(train_loader, start=epoch * len(train_loader)):
             itr_start = time.time()
@@ -197,9 +226,8 @@ def train(args, model, optimizer, train_loader, train_sampler, start_epoch, is_s
                 os.rename(args.checkpoint_dir / f'{stage}_checkpoint.pth', args.checkpoint_dir / f'{stage}_checkpoint_{epoch}')
             torch.save(state, args.checkpoint_dir / f'{stage}_checkpoint.pth')
 
-def test(args, model, test_loader, is_stage2, device, tb_logger):
+def test(args, model, test_loader, stage, device, tb_logger):
     model.eval()
-    stage = 'stage1' if not is_stage2 else 'stage2'
 
     color_metric = AverageMeter()
     digit_metric = AverageMeter()
@@ -269,16 +297,16 @@ def adjust_learning_rate(args, optimizer, loader, step):
 
 
 class SimCLR(nn.Module):
-    def __init__(self, args, is_stage2=False, stage1_backbone=None, stage1_projector=None):
+    def __init__(self, args, stage, stage1_backbone=None, stage1_projector=None, stage2_backbone=None, stage2_projector=None):
         super().__init__()
         self.args = args
-        self.is_stage2 = is_stage2
+        self.stage = stage
 
         self.backbone1 = torchvision.models.resnet18(zero_init_residual=True)
         self.backbone1.fc = nn.Identity()
 
         # Set models from stage 1 and freeze
-        if is_stage2:
+        if stage == 'stage2' or stage == 'stage3':
             self.backbone2 = stage1_backbone
             self.projector2 = stage1_projector
 
@@ -287,6 +315,17 @@ class SimCLR(nn.Module):
 
             for p in chain(self.backbone2.parameters(), self.projector2.parameters()):
                 p.requires_grad = False
+        
+        if stage == 'stage3':
+            self.backbone3 = stage2_backbone
+            self.projector3 = stage2_projector
+
+            self.backbone3.eval()
+            self.projector3.eval()
+
+            for p in chain(self.backbone3.parameters(), self.projector3.parameters()):
+                p.requires_grad = False
+
 
         # projector
         sizes = [512] * self.args.layer + [self.args.dim]
@@ -311,17 +350,32 @@ class SimCLR(nn.Module):
         z1_1 = self.projector1(r1_1)
         z1_2 = self.projector1(r1_2)
 
-        if not self.is_stage2:
+        if self.stage == 'stage1':
             loss, reg_loss = self.loss_fn(z1_1, z1_2, temperature=temp)
         
-        else:
+        elif self.stage == 'stage2':
             r2_1 = self.backbone2(y1)
             r2_2 = self.backbone2(y2)
 
             z2_1 = self.projector2(r2_1)
             z2_2 = self.projector2(r2_2)
 
-            loss, reg_loss = self.loss_fn(z1_1, z1_2, z2_1, z2_2, temperature=temp, is_stage2=self.is_stage2, lamb=lamb)
+            loss, reg_loss = self.loss_fn(z1_1, z1_2, z2_1, z2_2, temperature=temp, stage=self.stage, lamb=lamb)
+        
+        elif self.stage == 'stage3':
+            r2_1 = self.backbone2(y1)
+            r2_2 = self.backbone2(y2)
+
+            z2_1 = self.projector2(r2_1)
+            z2_2 = self.projector2(r2_2)
+
+            r3_1 = self.backbone3(y1)
+            r3_2 = self.backbone3(y2)
+
+            z3_1 = self.projector3(r3_1)
+            z3_2 = self.projector3(r3_2)
+
+            loss, reg_loss = self.loss_fn(z1_1, z1_2, z2_1, z2_2, z3_1, z3_2, temperature=temp, stage=self.stage, lamb=lamb)    
 
         # Online classifier 
         logits_digit1 = self.onne_head_digit1(r1_1.detach())
@@ -350,7 +404,7 @@ def infoNCE(z1, z2, temperature=0.1):
     loss = torch.nn.functional.cross_entropy(logits, labels)
     return loss
 
-def infoNCE_diverse(z1_1, z1_2, z2_1=None, z2_2=None, temperature=0.1, is_stage2=False, lamb=1.0):
+def infoNCE_diverse(z1_1, z1_2, z2_1=None, z2_2=None, z3_1=None, z3_2=None, temperature=0.1, stage='', lamb=1.0):
     z1_1 = torch.nn.functional.normalize(z1_1, dim=1)
     z1_2 = torch.nn.functional.normalize(z1_2, dim=1)
     z1_1 = gather_from_all(z1_1)
@@ -378,7 +432,7 @@ def infoNCE_diverse(z1_1, z1_2, z2_1=None, z2_2=None, temperature=0.1, is_stage2
     
     reg_loss = torch.Tensor([0.0]).to(device)
 
-    if is_stage2:
+    if stage == 'stage2':
         z2_1 = torch.nn.functional.normalize(z2_1, dim=1)
         z2_2 = torch.nn.functional.normalize(z2_2, dim=1)
         z2_1 = gather_from_all(z2_1)
@@ -390,6 +444,28 @@ def infoNCE_diverse(z1_1, z1_2, z2_1=None, z2_2=None, temperature=0.1, is_stage2
         sim_matrix2 = sim_matrix2[~mask].view(sim_matrix2.shape[0], -1)
 
         reg_loss = -1.0 * lamb * torch.nn.functional.l1_loss(torch.exp(sim_matrix1), torch.exp(sim_matrix2))
+
+    if stage == 'stage3':
+        z2_1 = torch.nn.functional.normalize(z2_1, dim=1)
+        z2_2 = torch.nn.functional.normalize(z2_2, dim=1)
+        z2_1 = gather_from_all(z2_1)
+        z2_2 = gather_from_all(z2_2)
+        z2 = torch.cat([z2_1, z2_2], dim=0)
+        sim_matrix2 = z2 @ z2.T
+        sim_matrix2 /= temperature
+
+        z3_1 = torch.nn.functional.normalize(z3_1, dim=1)
+        z3_2 = torch.nn.functional.normalize(z3_2, dim=1)
+        z3_1 = gather_from_all(z3_1)
+        z3_2 = gather_from_all(z3_2)
+        z3 = torch.cat([z3_1, z3_2], dim=0)
+        sim_matrix3 = z3 @ z3.T
+        sim_matrix3 /= temperature
+
+        sim_matrix3 = sim_matrix3[~mask].view(sim_matrix3.shape[0], -1)
+
+        reg_loss = -1.0 * lamb * (torch.nn.functional.l1_loss(torch.exp(sim_matrix1), torch.exp(sim_matrix2)) 
+                                + torch.nn.functional.l1_loss(torch.exp(sim_matrix1), torch.exp(sim_matrix3)))
 
     return loss, reg_loss
 
@@ -587,10 +663,10 @@ class Transform:
 
         self.transform_cmnist = transforms.Compose([
             transforms.RandomResizedCrop(size=28, scale=(0.2, 1.)),
-            # transforms.RandomHorizontalFlip(),
-            transforms.RandomApply([
-                transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-            ], p=0.8),
+            transforms.RandomHorizontalFlip(),
+            # transforms.RandomApply([
+            #     transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
+            # ], p=0.8),
             transforms.ToTensor(),
             # transforms.Normalize(mean=[0.485, 0.456, 0.406],
                         # std=[0.229, 0.224, 0.225])

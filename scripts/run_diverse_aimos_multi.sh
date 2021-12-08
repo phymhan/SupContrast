@@ -23,6 +23,7 @@ python \
       --color-std 0.0 \
       --num-colors 10 \
       --lamb 0.001 \
+      --train_stage3 \
       --print-freq 50 \
       --checkpoint-dir $HOME2/scratch/diverse/SupContrast/results/ \
       --log-dir $HOME2/scratch/diverse/SupContrast/logs/ \

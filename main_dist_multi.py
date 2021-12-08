@@ -35,8 +35,12 @@ parser.add_argument('--checkpoint-dir', default='/anonymous/', type=Path,
                     metavar='DIR', help='path to checkpoint directory')
 parser.add_argument('--log-dir', type=str, default='./logs/')
 parser.add_argument('--lamb', type=float, default=1.0, help='Lambda for kernel regularization between f and g')
+parser.add_argument('--train_stage1', action='store_true', default=False,
+                    help='Run stage 1 training of f')
 parser.add_argument('--train_stage2', action='store_true', default=False,
-                    help='Run only stage 2 (g training with f frozen) training')
+                    help='Run stage 2 (g training with f frozen) training')
+parser.add_argument('--train_stage3', action='store_true', default=False,
+                    help='Run stage 3 (h training with f, g frozen) training')
 parser.add_argument('--name', type=str, default='test')
 parser.add_argument('--seed', type=int, default=21)
 
