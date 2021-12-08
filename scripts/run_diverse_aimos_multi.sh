@@ -16,17 +16,17 @@ python \
       --workers 16 \
       --nodes 1 \
       --ngpus 6 \
-      --epochs 800 \
+      --epochs 100 \
       --batch-size 384 \
       --learning-rate 0.5 \
       --temp 0.1 \
-      --std 0.0 \
+      --color-std 0.0 \
       --num-colors 10 \
-      --lamb 0.01 \
+      --lamb 0.001 \
       --print-freq 50 \
       --checkpoint-dir $HOME2/scratch/diverse/SupContrast/results/ \
       --log-dir $HOME2/scratch/diverse/SupContrast/logs/ \
-      --name infonce-diverse-sequential-lambda0.01
+      --name infonce-diverse-sequential-epoch100-flipjit-lambda0.001
 
 echo "Run completed at:- "
 date
