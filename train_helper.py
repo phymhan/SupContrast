@@ -462,6 +462,7 @@ def infoNCE_diverse(z1_1, z1_2, z2_1=None, z2_2=None, z3_1=None, z3_2=None, temp
         sim_matrix3 = z3 @ z3.T
         sim_matrix3 /= temperature
 
+        sim_matrix2 = sim_matrix2[~mask].view(sim_matrix2.shape[0], -1)
         sim_matrix3 = sim_matrix3[~mask].view(sim_matrix3.shape[0], -1)
 
         reg_loss = -1.0 * lamb * (torch.nn.functional.l1_loss(torch.exp(sim_matrix1), torch.exp(sim_matrix2)) 
