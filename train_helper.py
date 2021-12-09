@@ -302,8 +302,20 @@ class SimCLR(nn.Module):
         self.args = args
         self.stage = stage
 
-        self.backbone1 = torchvision.models.resnet18(zero_init_residual=True)
-        self.backbone1.fc = nn.Identity()
+        if args.arch == 'resnet18':
+            self.backbone1 = torchvision.models.resnet18(zero_init_residual=True)
+            self.backbone1.fc = nn.Identity()
+        elif args.arch == 'resnet50':
+            self.backbone1 = torchvision.models.resnet50(zero_init_residual=True)
+            self.backbone1.fc = nn.Identity()
+        elif args.arch == 'mlp':
+            self.backbone1 = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(28*28*3, 512),
+                nn.BatchNorm1d(512),
+                nn.ReLU(),
+                nn.Linear(512, 512),
+            )
 
         # Set models from stage 1 and freeze
         if stage == 'stage2' or stage == 'stage3':

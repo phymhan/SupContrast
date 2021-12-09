@@ -53,6 +53,7 @@ parser.add_argument("--timeout", default=360, type=int, help="Duration of the jo
 parser.add_argument("--partition", default="el8", type=str, help="Partition where to submit")
 
 # variations
+parser.add_argument('--arch', default='resnet18', type=str)
 parser.add_argument('--dim', default=128, type=int)
 parser.add_argument('--layer', default=3, type=int)
 parser.add_argument('--temp', default=0.1, type=float)

@@ -254,7 +254,7 @@ class ColoredDataset(Dataset):
     def __init__(self, dataset, classes=None, colors=[0, 1], std=0, color_labels=None):
         self.dataset = dataset
         self.colors = colors
-        self.color_labels = color_labels
+        self.color_labels = np.random.choice(color_labels, len(self.dataset))
         if classes is None:
             classes = max([y for _, y in dataset]) + 1
 
@@ -271,8 +271,8 @@ class ColoredDataset(Dataset):
     
     def __getitem__(self, idx):
         (img1, img2), label = self.dataset[idx]
-        color_img1 = (self.colors[label] + self.perturb[idx]).clamp(0, 1) * img1
-        color_img2 = (self.colors[label] + self.perturb[idx]).clamp(0, 1) * img2
-        color_label = self.color_labels[label]
+        color_label = self.color_labels[idx]
+        color_img1 = (self.colors[color_label] + self.perturb[idx]).clamp(0, 1) * img1
+        color_img2 = (self.colors[color_label] + self.perturb[idx]).clamp(0, 1) * img2
 
         return (color_img1, color_img2), label, color_label
