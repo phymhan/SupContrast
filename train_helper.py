@@ -54,7 +54,7 @@ def main_worker(args):
 
     train_dataset = ColoredDataset(og_dataset_train, classes=args.num_colors, colors=[0, 1], std=args.color_std, color_labels=torch.arange(args.num_colors))
     test_perm = torch.randperm(args.num_colors)
-    test_dataset = ColoredDataset(og_dataset_test, classes=args.num_colors, colors=train_dataset.colors[test_perm], std=args.color_std, color_labels=torch.arange(args.num_colors)[test_perm])
+    test_dataset = ColoredDataset(og_dataset_test, classes=args.num_colors, colors=train_dataset.colors, std=args.color_std, color_labels=torch.arange(args.num_colors))
 
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, drop_last=False)
     assert args.batch_size % args.world_size == 0
