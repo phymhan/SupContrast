@@ -18,6 +18,7 @@ import numpy as np
 
 from dataset import IdxDataset, ClassDataset, ConcatDataset
 from dist_utils import gather_from_all, init_distributed_mode, get_rank, is_main_process, get_world_size
+from autoaugment import ImageNetPolicy
 
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 _logger = logging.getLogger('train')
@@ -437,7 +438,8 @@ class Transform:
         self.transform_supcon = transforms.Compose([
             transforms.RandomResizedCrop(size=224, scale=(0.08, 1.)),
             transforms.RandomHorizontalFlip(),
-            transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.IMAGENET, interpolation=transforms.INTERPOLATIONMODE.BILINEAR),
+            ImageNetPolicy(), 
+            # transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.IMAGENET, interpolation=transforms.INTERPOLATIONMODE.BILINEAR),
             transforms.RandomApply([transforms.GaussianBlur(kernel_size=224//20*2+1, sigma=(0.1, 2.0))], p=0.5),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
