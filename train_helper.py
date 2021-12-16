@@ -29,6 +29,7 @@ def load_top5(args):
             return pickle.load(f)
 
 def main_worker(args):
+    _logger.info('Init dist mode')
     init_distributed_mode(args)
 
     device = torch.device('cuda')
