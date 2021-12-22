@@ -82,7 +82,7 @@ def main_worker(gpu, args):
     _logger.info('Creating model')
     # model = torchvision.models.resnet50(pretrained=True).cuda(gpu)
     model_ver = 'efficientnet-b7'
-    model = EfficientNet.from_pretrained(model_ver)
+    model = EfficientNet.from_pretrained(model_ver).cuda(gpu)
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
     model.eval()
 
