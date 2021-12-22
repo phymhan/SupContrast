@@ -16,6 +16,7 @@ import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import pickle
+from efficientnet_pytorch import EfficientNet
 #import wandb
 
 from dist_utils import gather_from_all
@@ -79,7 +80,9 @@ def main_worker(gpu, args):
     torch.backends.cudnn.benchmark = True
     
     _logger.info('Creating model')
-    model = torchvision.models.resnet50(pretrained=True).cuda(gpu)
+    # model = torchvision.models.resnet50(pretrained=True).cuda(gpu)
+    model_ver = 'efficientnet-b7'
+    model = EfficientNet.from_pretrained(model_ver)
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
     model.eval()
 
@@ -96,7 +99,7 @@ def main_worker(gpu, args):
 
     top5_dict = {}
 
-    file_path = os.path.join(args.checkpoint_dir, 'imagenet_top5.pkl')
+    file_path = os.path.join(args.checkpoint_dir, '{}_imagenet_top5.pkl'.format(model_ver))
     if os.path.isfile(file_path):
         print('Loading top5 dict')
         with open(file_path, 'rb') as f:

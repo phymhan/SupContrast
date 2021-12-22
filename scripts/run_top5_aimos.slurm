@@ -54,7 +54,7 @@ python \
       --print-freq 50 \
       --checkpoint-dir $HOME2/scratch/SupContrast/results/ \
       --log-dir $HOME2/scratch/SupContrast/logs/ \
-      --name supcon-baseline-imagenet
+      --name efficientnet-imagenet
 
 echo "Run completed at:- "
 date
