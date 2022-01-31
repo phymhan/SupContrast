@@ -436,6 +436,7 @@ class Transform:
         ])
 
         if args.autoaugment:
+            print('Autoaugment ON', flush=True)
             self.transform_supcon = transforms.Compose([
                 transforms.RandomResizedCrop(size=224, scale=(0.08, 1.)),
                 transforms.RandomHorizontalFlip(),
@@ -447,6 +448,7 @@ class Transform:
                             std=[0.229, 0.224, 0.225])
             ])
         else:
+            print('Autoaugment OFF', flush=True)
             self.transform_supcon = transforms.Compose([
                 transforms.RandomResizedCrop(size=224, scale=(0.08, 1.)),
                 transforms.RandomHorizontalFlip(),
