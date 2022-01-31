@@ -49,6 +49,7 @@ parser.add_argument("--partition", default="el8", type=str, help="Partition wher
 parser.add_argument('--dim', default=128, type=int)
 parser.add_argument('--layer', default=3, type=int)
 parser.add_argument('--temp', default=0.1, type=float)
+parser.add_argument('--autoaugment', default=False, action='store_true', help='Whether to turn on AutoAugment')
 
 class Trainer(object):
     def __init__(self, args):
