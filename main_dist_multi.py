@@ -48,6 +48,7 @@ parser.add_argument("--partition", default="el8", type=str, help="Partition wher
 parser.add_argument('--dim', default=128, type=int)
 parser.add_argument('--layer', default=3, type=int)
 parser.add_argument('--temp', default=0.1, type=float)
+parser.add_argument('--autoaugment', default=False, action='store_true', help='Whether to turn on AutoAugment')
 
 class Trainer(object):
     def __init__(self, args):
@@ -110,7 +111,7 @@ def main():
         mem_gb=40 * num_gpus_per_node,
         gpus_per_node=num_gpus_per_node,
         tasks_per_node=num_gpus_per_node,  # one task per GPU
-        cpus_per_task=16,
+        cpus_per_task=24,
         nodes=nodes,
         timeout_min=timeout_min,  # max is 60 * 6
         # Below are cluster dependent parameters

@@ -13,7 +13,7 @@ ulimit -s unlimited
 python \
       $HOME2/scratch/baseline/SupContrast/main_dist_multi.py \
       --data /gpfs/u/locker/200/CADS/datasets/ImageNet/train/ \
-      --workers 16 \
+      --workers 24 \
       --nodes 4 \
       --ngpus 6 \
       --epochs 800 \
@@ -23,7 +23,7 @@ python \
       --print-freq 50 \
       --checkpoint-dir $HOME2/scratch/baseline/SupContrast/results/ \
       --log-dir $HOME2/scratch/baseline/SupContrast/logs/ \
-      --name supcon-baseline-imagenet-multi-autoaugment
+      --name supcon-baseline-imagenet-multi
 
 echo "Run completed at:- "
 date

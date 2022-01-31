@@ -420,16 +420,30 @@ class Transform:
                                  std=[0.229, 0.224, 0.225])
         ])
 
-        self.transform_supcon = transforms.Compose([
-            transforms.RandomResizedCrop(size=224, scale=(0.08, 1.)),
-            transforms.RandomHorizontalFlip(),
-            ImageNetPolicy(),
-            # transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.IMAGENET, interpolation=transforms.INTERPOLATIONMODE.BILINEAR),
-            transforms.RandomApply([transforms.GaussianBlur(kernel_size=224//20*2+1, sigma=(0.1, 2.0))], p=0.5),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                        std=[0.229, 0.224, 0.225])
-        ])
+        if args.autoaugment:
+            print('Autoaugment ON', flush=True)
+            self.transform_supcon = transforms.Compose([
+                transforms.RandomResizedCrop(size=224, scale=(0.08, 1.)),
+                transforms.RandomHorizontalFlip(),
+                ImageNetPolicy(), 
+                # transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.IMAGENET, interpolation=transforms.INTERPOLATIONMODE.BILINEAR),
+                transforms.RandomApply([transforms.GaussianBlur(kernel_size=224//20*2+1, sigma=(0.1, 2.0))], p=0.5),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225])
+            ])
+        else:
+            print('Autoaugment OFF', flush=True)
+            self.transform_supcon = transforms.Compose([
+                transforms.RandomResizedCrop(size=224, scale=(0.08, 1.)),
+                transforms.RandomHorizontalFlip(),
+                # ImageNetPolicy(), 
+                # transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.IMAGENET, interpolation=transforms.INTERPOLATIONMODE.BILINEAR),
+                transforms.RandomApply([transforms.GaussianBlur(kernel_size=224//20*2+1, sigma=(0.1, 2.0))], p=0.5),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225])
+            ])
 
 
     def __call__(self, x):
