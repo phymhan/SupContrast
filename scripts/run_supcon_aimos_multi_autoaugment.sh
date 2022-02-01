@@ -3,7 +3,7 @@
 ## User python environment
 HOME2=/gpfs/u/home/BNSS/BNSSsgwh
 PYTHON_VIRTUAL_ENVIRONMENT=pytorch1.7
-CONDA_ROOT=$HOME2/barn/miniconda3
+CONDA_ROOT=$HOME/scratch/miniconda3
 
 ## Activate WMLCE virtual environment 
 source ${CONDA_ROOT}/etc/profile.d/conda.sh
