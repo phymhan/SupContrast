@@ -180,10 +180,10 @@ class SimCLR(nn.Module):
         layers = []
         for i in range(len(sizes) - 2):
             layers.append(nn.Linear(sizes[i], sizes[i + 1], bias=False))
-            layers.append(nn.BatchNorm1d(sizes[i + 1]))
+            # layers.append(nn.BatchNorm1d(sizes[i + 1]))
             layers.append(nn.ReLU(inplace=True))
         layers.append(nn.Linear(sizes[-2], sizes[-1], bias=False))
-        layers.append(nn.BatchNorm1d(sizes[-1]))
+        # layers.append(nn.BatchNorm1d(sizes[-1]))
         self.projector = nn.Sequential(*layers)
 
         self.onne_head = nn.Linear(2048, 1000)
