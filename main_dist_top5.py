@@ -113,8 +113,8 @@ def main_worker(gpu, args):
         for step, (images, labels, idxs) in enumerate(tqdm(loader)):
             itr_start = time.time()
             images = images.cuda(gpu, non_blocking=True)
-            labels = labels.cuda(gpu, non_blocking=True)
-            idxs = idxs.cuda(gpu, non_blocking=True)
+            labels = labels
+            idxs = idxs
 
             with torch.cuda.amp.autocast():
                 outputs = model(images)
