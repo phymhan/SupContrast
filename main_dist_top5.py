@@ -117,9 +117,11 @@ def main_worker(gpu, args):
             idxs = idxs.cuda(gpu, non_blocking=True)
 
             with torch.cuda.amp.autocast():
-                outputs = model(images).cpu()
+                outputs = model(images)
+            
+            outputs = outputs.float().cpu()
 
-            preds_top5 = torch.topk(outputs, 5)[1]
+            preds_top5 = torch.topk(outputs.float(), 5)[1]
 
             labels_all = gather_from_all(labels)
             preds_top5_all = gather_from_all(preds_top5)
