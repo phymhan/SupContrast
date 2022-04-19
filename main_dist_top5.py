@@ -95,8 +95,13 @@ def main_worker(gpu, args):
     sampler.set_epoch(0)
 
     top5_dict = {}
+    logits_dict = {}
+    logits_renorm_dict = {}
 
-    file_path = os.path.join(args.checkpoint_dir, 'imagenet_top5.pkl')
+    file_path = os.path.join(args.checkpoint_dir, 'imagenet_resnet50_top5.pkl')
+    logits_file_path = os.path.join(args.checkpoint_dir, 'imagenet_resnet50_logits.pkl')
+    logits_renorm_file_path = os.path.join(args.checkpoint_dir, 'imagenet_resnet50_logits_renorm.pkl')
+
     if os.path.isfile(file_path):
         print('Loading top5 dict')
         with open(file_path, 'rb') as f:
@@ -112,7 +117,8 @@ def main_worker(gpu, args):
             idxs = idxs.cuda(gpu, non_blocking=True)
 
             with torch.cuda.amp.autocast():
-                outputs = model(images)
+                outputs = model(images).cpu()
+
             preds_top5 = torch.topk(outputs, 5)[1]
 
             labels_all = gather_from_all(labels)
@@ -122,6 +128,13 @@ def main_worker(gpu, args):
             for i in range(len(preds_top5_all)):
                 top5_nogt = preds_top5_all[i][labels_all[i]!=preds_top5_all[i]]
                 top5_dict[int(idxs_all[i])] = top5_nogt
+                logits_dict[int(idxs_all[i])] = outputs[i]
+
+                outputs_renorm = outputs[i].clone()
+                outputs_renorm = outputs_renorm[torch.arange(outputs_renorm.size(0)) != labels_all[i]].softmax(-1)
+                outputs_renorm = torch.cat([outputs_renorm[:labels_all[i]], torch.Tensor([1.0]), outputs_renorm[:labels_all[i]]])
+
+                logits_renorm_dict[idxs_all[i]] = outputs_renorm
 
         itr_end = time.time()
         itr_time = itr_end - itr_start
@@ -136,6 +149,12 @@ def main_worker(gpu, args):
     if args.rank == 0:
         with open(file_path, 'wb') as f:
             pickle.dump(top5_dict, f, pickle.HIGHEST_PROTOCOL)
+
+        with open(logits_file_path, 'wb') as f:
+            pickle.dump(logits_dict, f, pickle.HIGHEST_PROTOCOL)
+
+        with open(logits_renorm_file_path, 'wb') as f:
+            pickle.dump(logits_renorm_dict, f, pickle.HIGHEST_PROTOCOL)
 
 
 def adjust_learning_rate(args, optimizer, loader, step):
