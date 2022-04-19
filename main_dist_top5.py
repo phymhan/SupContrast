@@ -120,13 +120,14 @@ def main_worker(gpu, args):
                 outputs = model(images)
             
             outputs = outputs.float().cpu()
-
-            preds_top5 = torch.topk(outputs.float(), 5)[1]
-
+            
+            outputs = gather_from_all(outputs)
             labels_all = gather_from_all(labels)
             preds_top5_all = gather_from_all(preds_top5)
             idxs_all = gather_from_all(idxs)
             
+            preds_top5 = torch.topk(outputs.float(), 5)[1]
+
             for i in range(len(preds_top5_all)):
                 top5_nogt = preds_top5_all[i][labels_all[i]!=preds_top5_all[i]]
                 top5_dict[int(idxs_all[i])] = top5_nogt
