@@ -134,7 +134,7 @@ def main_worker(gpu, args):
 
                 outputs_renorm = outputs[i].clone()
                 outputs_renorm = outputs_renorm[torch.arange(outputs_renorm.size(0)) != labels_all[i]].softmax(-1)
-                outputs_renorm = torch.cat([outputs_renorm[:labels_all[i]], torch.Tensor([1.0]), outputs_renorm[:labels_all[i]]])
+                outputs_renorm = torch.cat([outputs_renorm[:labels_all[i]], torch.Tensor([1.0]), outputs_renorm[labels_all[i]:]])
 
                 logits_renorm_dict[idxs_all[i]] = outputs_renorm
 
