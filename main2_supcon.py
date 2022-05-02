@@ -6,7 +6,7 @@ import argparse
 import time
 import math
 
-import tensorboard_logger as tb_logger
+# import tensorboard_logger as tb_logger
 import torch
 import torch.backends.cudnn as cudnn
 from torchvision import transforms, datasets
@@ -15,23 +15,29 @@ from util import TwoCropTransform, AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate
 from util import set_optimizer, save_model
 from networks.resnet_big import SupConResNet
-from losses import SupConLoss
+from losses import SupConLoss, simclr_loss, simclr_loss_pos_append, simclr_loss_pos_all
+from losses import essl_loss, essl_loss_pos_append
 
 try:
     import apex
     from apex import amp, optimizers
 except ImportError:
     pass
-
+import numpy as np
+from pathlib import Path
+from util import print_args, setup_wandb, logging_file
+from util_knn import knn_loop
+import pdb
+st = pdb.set_trace
 
 def parse_option():
     parser = argparse.ArgumentParser('argument for training')
 
-    parser.add_argument('--print_freq', type=int, default=10,
+    parser.add_argument('--print_freq', type=int, default=50,
                         help='print frequency')
-    parser.add_argument('--save_freq', type=int, default=50,
+    parser.add_argument('--save_freq', type=int, default=100,
                         help='save frequency')
-    parser.add_argument('--batch_size', type=int, default=256,
+    parser.add_argument('--batch_size', type=int, default=512,
                         help='batch_size')
     parser.add_argument('--num_workers', type=int, default=16,
                         help='num of workers to use')
@@ -52,7 +58,7 @@ def parse_option():
 
     # model dataset
     parser.add_argument('--model', type=str, default='resnet50')
-    parser.add_argument('--dataset', type=str, default='cifar10',
+    parser.add_argument('--dataset', type=str, default='cifar100',
                         choices=['cifar10', 'cifar100', 'imagenet', 'path'], help='dataset')
     parser.add_argument('--mean', type=str, help='mean of dataset in path in form of str tuple')
     parser.add_argument('--std', type=str, help='std of dataset in path in form of str tuple')
@@ -60,8 +66,8 @@ def parse_option():
     parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop')
 
     # method
-    parser.add_argument('--method', type=str, default='SupCon',
-                        choices=['SupCon', 'SimCLR'], help='choose method')
+    parser.add_argument('--method', type=str, default='SimCLR',
+                        choices=['SupCon', 'SimCLR', 'SimCLR2', 'SimCLR2+pos_app', 'SimCLR2+pos_all', 'essl', 'essl+pos_app'], help='choose method')
 
     # temperature
     parser.add_argument('--temp', type=float, default=0.07,
@@ -77,39 +83,56 @@ def parse_option():
     parser.add_argument('--trial', type=str, default='0',
                         help='id for recording multiple runs')
     
+    # ========== add args ==========
+    parser.add_argument('--log_dir', type=str, default='logs/baseline')
+    parser.add_argument('--no_wandb', action='store_true')
+    parser.add_argument('--wandb_project', default='simclr-cifar100', type=str)
+    parser.add_argument('--cuda', default=None, type=str, help='cuda device ids to use')
     parser.add_argument('--optimizer', default='sgd', type=str, help='optimizer')
+    parser.add_argument('--split', action='store_true')
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--no_seed', action='store_true')
+    parser.add_argument('--append_view', action='store_true')
+    parser.add_argument('--sample_from_original', action='store_true')
+    parser.add_argument('--pos_view_paths', type=str, default='')
+    parser.add_argument('--neg_view_paths', type=str, default='')
+    parser.add_argument('--alpha', type=float, default=0.5,
+                        help='essl scale alpha')
 
     opt = parser.parse_args()
+    args = opt
 
     # check if dataset is path that passed required arguments
     if opt.dataset == 'path':
         assert opt.data_folder is not None \
             and opt.mean is not None \
-            and opt.std is not None
+            and opt.std is not None  # NOTE: commented out since it's imagenet
+    
+    if opt.append_view:
+        args.pos_view_paths = [s for s in args.pos_view_paths.split(',') if s != '']
+        print(f"pos_view_paths = {args.pos_view_paths}")
+        args.neg_view_paths = [s for s in args.neg_view_paths.split(',') if s != '']
+        print(f"neg_view_paths = {args.neg_view_paths}")
 
     # set the path according to the environment
     if opt.data_folder is None:
         opt.data_folder = './datasets/'
-    opt.model_path = './save/SupCon/{}_models'.format(opt.dataset)
-    opt.tb_path = './save/SupCon/{}_tensorboard'.format(opt.dataset)
 
     iterations = opt.lr_decay_epochs.split(',')
     opt.lr_decay_epochs = list([])
     for it in iterations:
         opt.lr_decay_epochs.append(int(it))
 
-    opt.model_name = '{}_{}_{}_lr_{}_decay_{}_bsz_{}_temp_{}_trial_{}'.\
-        format(opt.method, opt.dataset, opt.model, opt.learning_rate,
-               opt.weight_decay, opt.batch_size, opt.temp, opt.trial)
-
-    if opt.cosine:
-        opt.model_name = '{}_cosine'.format(opt.model_name)
+    # log_dir
+    opt.log_dir = Path(opt.log_dir)
+    opt.use_wandb = not opt.no_wandb
+    if opt.cuda is not None:
+        os.environ['CUDA_VISIBLE_DEVICES'] = opt.cuda
 
     # warm-up for large-batch training,
     if opt.batch_size > 256:
         opt.warm = True
     if opt.warm:
-        opt.model_name = '{}_warm'.format(opt.model_name)
         opt.warmup_from = 0.01
         opt.warm_epochs = 10
         if opt.cosine:
@@ -118,16 +141,64 @@ def parse_option():
                     1 + math.cos(math.pi * opt.warm_epochs / opt.epochs)) / 2
         else:
             opt.warmup_to = opt.learning_rate
+    
+    os.makedirs(opt.log_dir, exist_ok=True)
+    os.makedirs(opt.log_dir / 'weights', exist_ok=True)
 
-    opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
-    if not os.path.isdir(opt.tb_folder):
-        os.makedirs(opt.tb_folder)
-
-    opt.save_folder = os.path.join(opt.model_path, opt.model_name)
-    if not os.path.isdir(opt.save_folder):
-        os.makedirs(opt.save_folder)
+    print_args(parser, opt)
 
     return opt
+
+
+def set_test_loader(opt):
+    # construct data loader
+    if opt.dataset == 'cifar10':
+        mean = (0.4914, 0.4822, 0.4465)
+        std = (0.2023, 0.1994, 0.2010)
+    elif opt.dataset == 'cifar100':
+        mean = (0.5071, 0.4867, 0.4408)
+        std = (0.2675, 0.2565, 0.2761)
+    elif opt.dataset == 'imagenet':
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
+    elif opt.dataset == 'path':
+        mean = eval(opt.mean)
+        std = eval(opt.std)
+    else:
+        raise ValueError('dataset not supported: {}'.format(opt.dataset))
+    normalize = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=mean, std=std),
+    ])
+
+    if opt.dataset == 'cifar10':
+        memory_dataset = datasets.CIFAR10(root=opt.data_folder, train=True,
+                                         transform=normalize,
+                                         download=True)
+        test_dataset = datasets.CIFAR10(root=opt.data_folder, train=False,
+                                         transform=normalize,
+                                         download=True)
+    elif opt.dataset == 'cifar100':
+        memory_dataset = datasets.CIFAR100(root=opt.data_folder, train=True,
+                                          transform=normalize,
+                                          download=True)
+        test_dataset = datasets.CIFAR100(root=opt.data_folder, train=False,
+                                          transform=normalize,
+                                          download=True)
+    elif opt.dataset == 'path' or opt.dataset == 'imagenet':
+        memory_dataset = datasets.ImageFolder(root=os.path.join(opt.data_folder, 'train'),
+                                            transform=normalize)
+        test_dataset = datasets.ImageFolder(root=os.path.join(opt.data_folder, 'val_imagefolder'),
+                                            transform=normalize)  # NOTE: hardcoded for T64
+    else:
+        raise ValueError(opt.dataset)
+    memory_loader = torch.utils.data.DataLoader(
+        memory_dataset, batch_size=opt.batch_size, shuffle=False,
+        num_workers=opt.num_workers, pin_memory=True)
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset, batch_size=opt.batch_size, shuffle=False,
+        num_workers=opt.num_workers, pin_memory=True)
+    return memory_loader, test_loader
 
 
 def set_loader(opt):
@@ -168,10 +239,27 @@ def set_loader(opt):
                                           transform=TwoCropTransform(train_transform),
                                           download=True)
     elif opt.dataset == 'path' or opt.dataset == 'imagenet':
-        train_dataset = datasets.ImageFolder(root=opt.data_folder,
+        train_dataset = datasets.ImageFolder(root=os.path.join(opt.data_folder, 'train'),
                                             transform=TwoCropTransform(train_transform))
     else:
         raise ValueError(opt.dataset)
+    
+    if opt.append_view:
+        from util_data import MultiViewDataset
+        transform3 = transforms.Compose([
+            transforms.RandomHorizontalFlip(),
+            normalize,
+        ])  # NOTE: hardcoded, also NO post-transform
+        train_dataset = MultiViewDataset(
+            orig_dataset=train_dataset,
+            pos_view_paths=opt.pos_view_paths,
+            neg_view_paths=opt.neg_view_paths,
+            transform3=transform3,
+            n_views=1,  # NOTE: hardcoded
+            train=True,
+            subset_index=np.arange(50000),  # TODO: hardcoded
+            sample_from_original=opt.sample_from_original,
+        )
 
     train_sampler = None
     train_loader = torch.utils.data.DataLoader(
@@ -199,7 +287,7 @@ def set_model(opt):
     return model, criterion
 
 
-def train(train_loader, model, criterion, optimizer, epoch, opt):
+def train(train_loader, model, criterion, optimizer, epoch, opt, file_to_update=None):
     """one epoch training"""
     model.train()
 
@@ -208,10 +296,11 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
     losses = AverageMeter()
 
     end = time.time()
-    for idx, (images, labels) in enumerate(train_loader):
+    for idx, (inputs, labels) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
-        images = torch.cat([images[0], images[1]], dim=0)
+        # images = torch.cat([inputs[0], inputs[1]], dim=0)
+        images = torch.cat(inputs, dim=0)
         if torch.cuda.is_available():
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
@@ -221,13 +310,30 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         warmup_learning_rate(opt, epoch, idx, len(train_loader), optimizer)
 
         # compute loss
-        features = model(images)
-        f1, f2 = torch.split(features, [bsz, bsz], dim=0)
-        features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+        if opt.split:
+            features = torch.cat([model(image_) for image_ in images.split(opt.batch_size, dim=0)], dim=0)
+        else:
+            features = model(images)
+
+        if opt.method in ['SupCon', 'SimCLR']:
+            f1, f2 = torch.split(features, [bsz, bsz], dim=0)
+            features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+        else:
+            feat_list = torch.split(features, bsz, dim=0)
         if opt.method == 'SupCon':
             loss = criterion(features, labels)
         elif opt.method == 'SimCLR':
             loss = criterion(features)
+        elif opt.method == 'SimCLR2':
+            loss = simclr_loss(feat_list[0], feat_list[1], opt.temp)
+        elif opt.method == 'SimCLR2+pos_app':
+            loss = simclr_loss_pos_append(feat_list[0], feat_list[1], feat_list[2], opt.alpha, opt.temp)
+        elif opt.method == 'SimCLR2+pos_all':
+            loss = simclr_loss_pos_all(feat_list[0], feat_list[1], feat_list[2], opt.temp)
+        elif opt.method == 'essl':
+            loss = essl_loss(feat_list[0], feat_list[1], opt.temp)
+        elif opt.method == 'essl+pos_app':
+            loss = essl_loss_pos_append(feat_list[0], feat_list[1], feat_list[2], opt.alpha, opt.temp)
         else:
             raise ValueError('contrastive method not supported: {}'.
                              format(opt.method))
@@ -246,19 +352,31 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
 
         # print info
         if (idx + 1) % opt.print_freq == 0:
-            print('Train: [{0}][{1}/{2}]\t'
+            line_to_print = ('Train: [{0}][{1}/{2}]\t'
                   'BT {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'DT {data_time.val:.3f} ({data_time.avg:.3f})\t'
                   'loss {loss.val:.3f} ({loss.avg:.3f})'.format(
                    epoch, idx + 1, len(train_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses))
+            print(line_to_print)
             sys.stdout.flush()
+
+            if file_to_update:
+                file_to_update.write(line_to_print + '\n')
+                file_to_update.flush()
 
     return losses.avg
 
 
 def main():
     opt = parse_option()
+
+    # set random seed
+    if not opt.no_seed:
+        from util import fix_seed
+        fix_seed(opt.seed)
+
+    file_to_update = logging_file(os.path.join(opt.log_dir, 'train.log.txt'), 'a+')
 
     # build data loader
     train_loader = set_loader(opt)
@@ -270,7 +388,9 @@ def main():
     optimizer = set_optimizer(opt, model)
 
     # tensorboard
-    logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
+    logger = setup_wandb(opt) if opt.use_wandb else None
+
+    memory_loader, test_loader = set_test_loader(opt)
 
     # training routine
     for epoch in range(1, opt.epochs + 1):
@@ -278,22 +398,33 @@ def main():
 
         # train for one epoch
         time1 = time.time()
-        loss = train(train_loader, model, criterion, optimizer, epoch, opt)
+        loss = train(train_loader, model, criterion, optimizer, epoch, opt, file_to_update)
         time2 = time.time()
-        print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
-        # tensorboard logger
-        logger.log_value('loss', loss, epoch)
-        logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
+        # test
+        knn_acc = knn_loop(model.encoder, memory_loader, test_loader)
+        line_to_print = 'epoch {}, knn_acc {:.2f}, total time {:.2f}'.format(epoch, knn_acc, time2 - time1)
+        print(line_to_print)
+        if file_to_update:
+            file_to_update.write(line_to_print + '\n')
+            file_to_update.flush()
+
+        if logger is not None:
+            logger.log({
+                'loss': loss,
+                'knn_acc': knn_acc,
+                'lr': optimizer.param_groups[0]['lr'],
+                'epoch': epoch,
+            }, step=epoch)
 
         if epoch % opt.save_freq == 0:
             save_file = os.path.join(
-                opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch))
+                opt.log_dir, 'weights', 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch))
             save_model(model, optimizer, opt, epoch, save_file)
 
     # save the last model
     save_file = os.path.join(
-        opt.save_folder, 'last.pth')
+        opt.log_dir, 'weights', 'last.pth')
     save_model(model, optimizer, opt, opt.epochs, save_file)
 
 
