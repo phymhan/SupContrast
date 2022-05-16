@@ -30,6 +30,11 @@ from util_knn import knn_loop
 import pdb
 st = pdb.set_trace
 
+def toggle_grad(model, requires_grad):
+    for p in model.parameters():
+        p.requires_grad = requires_grad
+
+
 def parse_option():
     parser = argparse.ArgumentParser('argument for training')
 
@@ -101,6 +106,8 @@ def parse_option():
     parser.add_argument('--uint8', action='store_true')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--resume_from', type=str, default=None)
+
+    parser.add_argument("--lr_viewmaker", type=float, default=0.001)
 
     opt = parser.parse_args()
     args = opt
@@ -204,6 +211,30 @@ def set_test_loader(opt):
     return memory_loader, test_loader
 
 
+def set_view_transform(opt):
+    if opt.dataset == 'cifar10':
+        mean = (0.4914, 0.4822, 0.4465)
+        std = (0.2023, 0.1994, 0.2010)
+    elif opt.dataset == 'cifar100':
+        mean = (0.5071, 0.4867, 0.4408)
+        std = (0.2675, 0.2565, 0.2761)
+    elif opt.dataset == 'imagenet':
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
+    elif opt.dataset == 'path':
+        mean = eval(opt.mean)
+        std = eval(opt.std)
+    else:
+        raise ValueError('dataset not supported: {}'.format(opt.dataset))
+    normalize = transforms.Normalize(mean=mean, std=std)
+    
+    mean_inv = [-mean[i] / std[i] for i in range(3)]
+    std_inv = [1 / std[i] for i in range(3)]
+    normalize_inv = transforms.Normalize(mean=mean_inv, std=std_inv)
+
+    return normalize, normalize_inv
+
+
 def set_loader(opt):
     # construct data loader
     if opt.dataset == 'cifar10':
@@ -222,15 +253,25 @@ def set_loader(opt):
         raise ValueError('dataset not supported: {}'.format(opt.dataset))
     normalize = transforms.Normalize(mean=mean, std=std)
 
+    # train_transform = transforms.Compose([
+    #     transforms.RandomResizedCrop(size=opt.size, scale=(0.2, 1.)),
+    #     transforms.RandomHorizontalFlip(),
+    #     transforms.RandomApply([
+    #         transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
+    #     ], p=0.8),
+    #     transforms.RandomGrayscale(p=0.2),
+    #     transforms.ToTensor(),
+    #     normalize,
+    # ])
     train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(size=opt.size, scale=(0.2, 1.)),
+        # transforms.RandomResizedCrop(size=opt.size, scale=(0.2, 1.)),
         transforms.RandomHorizontalFlip(),
-        transforms.RandomApply([
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-        ], p=0.8),
-        transforms.RandomGrayscale(p=0.2),
+        # transforms.RandomApply([
+        #     transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
+        # ], p=0.8),
+        # transforms.RandomGrayscale(p=0.2),
         transforms.ToTensor(),
-        normalize,
+        # normalize,
     ])
 
     if opt.dataset == 'cifar10':
@@ -291,7 +332,8 @@ def set_model(opt):
     return model, criterion
 
 
-def train(train_loader, model, criterion, optimizer, epoch, opt, file_to_update=None):
+def train(train_loader, model, criterion, optimizer, epoch, opt, file_to_update=None,
+        view_model=None, view_optimizer=None, normalize=None, normalize_inv=None):
     """one epoch training"""
     model.train()
 
@@ -301,17 +343,30 @@ def train(train_loader, model, criterion, optimizer, epoch, opt, file_to_update=
 
     end = time.time()
     for idx, (inputs, labels) in enumerate(train_loader):
+        # warm-up learning rate
+        warmup_learning_rate(opt, epoch, idx, len(train_loader), optimizer)
+
+        # warm-up learning rate
+        warmup_learning_rate(opt, epoch, idx, len(train_loader), view_optimizer)
+
         data_time.update(time.time() - end)
 
         # images = torch.cat([inputs[0], inputs[1]], dim=0)
-        images = torch.cat(inputs, dim=0)
-        if torch.cuda.is_available():
-            images = images.cuda(non_blocking=True)
-            labels = labels.cuda(non_blocking=True)
+        # if torch.cuda.is_available():
+        inputs_orig = [x.cuda(non_blocking=True) for x in inputs]
+        labels = labels.cuda(non_blocking=True)
+
+        # if torch.cuda.is_available():
+        #     images = images.cuda(non_blocking=True)
+        #     labels = labels.cuda(non_blocking=True)
         bsz = labels.shape[0]
 
-        # warm-up learning rate
-        warmup_learning_rate(opt, epoch, idx, len(train_loader), optimizer)
+        # Encoder Step
+        toggle_grad(view_model, False)
+        toggle_grad(model, True)
+        inputs = [view_model(x) for x in inputs_orig]
+        inputs = [normalize(x).detach() for x in inputs]
+        images = torch.cat(inputs, dim=0)
 
         # compute loss
         if opt.split:
@@ -350,6 +405,45 @@ def train(train_loader, model, criterion, optimizer, epoch, opt, file_to_update=
         loss.backward()
         optimizer.step()
 
+        # ViewMaker Step
+        toggle_grad(view_model, True)
+        toggle_grad(model, False)
+        inputs = [view_model(x) for x in inputs_orig]
+        inputs = [normalize(x) for x in inputs]
+        images = torch.cat(inputs, dim=0)
+
+        if opt.split:
+            features = torch.cat([model(image_) for image_ in images.split(opt.batch_size, dim=0)], dim=0)
+        else:
+            features = model(images)  # NOTE: forward large batch including appended views
+
+        if opt.method in ['SupCon', 'SimCLR']:
+            f1, f2 = torch.split(features, [bsz, bsz], dim=0)
+            features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+        else:
+            feat_list = torch.split(features, bsz, dim=0)
+        if opt.method == 'SupCon':
+            loss = criterion(features, labels)
+        elif opt.method == 'SimCLR':
+            loss = criterion(features)
+        elif opt.method == 'SimCLR2':
+            loss = simclr_loss(feat_list[0], feat_list[1], opt.temp)
+        elif opt.method == 'SimCLR2+pos_app':
+            loss = simclr_loss_pos_append(feat_list[0], feat_list[1], feat_list[2], opt.alpha, opt.temp)
+        elif opt.method == 'SimCLR2+pos_all':
+            loss = simclr_loss_pos_all(feat_list[0], feat_list[1], feat_list[2], opt.temp)
+        elif opt.method == 'essl':
+            loss = essl_loss(feat_list[0], feat_list[1], opt.temp)
+        elif opt.method == 'essl+pos_app':
+            loss = essl_loss_pos_append(feat_list[0], feat_list[1], feat_list[2], opt.alpha, opt.temp)
+        else:
+            raise ValueError('contrastive method not supported: {}'.
+                             format(opt.method))
+        loss = -loss * 1.0
+        view_optimizer.zero_grad()
+        loss.backward()
+        view_optimizer.step()
+
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
@@ -376,9 +470,9 @@ def main():
     opt = parse_option()
 
     # set random seed
-    # if not opt.no_seed:
-    #     from util import fix_seed
-    #     fix_seed(opt.seed)
+    if not opt.no_seed:
+        from util import fix_seed
+        fix_seed(opt.seed)
 
     try:
         file_to_update = logging_file(os.path.join(opt.log_dir, 'train.log.txt'), 'a+')
@@ -393,6 +487,12 @@ def main():
 
     # build optimizer
     optimizer = set_optimizer(opt, model)
+
+    # view model
+    from util_viewmaker import create_viewmaker
+    view_model = create_viewmaker()
+    view_model.cuda()
+    view_optimizer = torch.optim.Adam(view_model.parameters(), lr=opt.lr_viewmaker)
 
     # tensorboard
     logger = setup_wandb(opt) if opt.use_wandb else None
@@ -415,13 +515,16 @@ def main():
 
     memory_loader, test_loader = set_test_loader(opt)
 
+    normalize, normalize_inv = set_view_transform(opt)
+
     # training routine
     for epoch in range(start_epoch, opt.epochs + 1):
         adjust_learning_rate(opt, optimizer, epoch)
 
         # train for one epoch
         time1 = time.time()
-        loss = train(train_loader, model, criterion, optimizer, epoch, opt, file_to_update)
+        loss = train(train_loader, model, criterion, optimizer, epoch, opt, file_to_update,
+            view_model, view_optimizer, normalize, normalize_inv)
         time2 = time.time()
 
         # test

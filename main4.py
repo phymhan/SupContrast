@@ -11,7 +11,7 @@ import torch
 import torch.backends.cudnn as cudnn
 from torchvision import transforms, datasets
 
-from util import TwoCropTransform, AverageMeter
+from util import TwoCropTransform, TwoCropTransform1, TwoCropTransform2, TwoCropTransform3, AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate
 from util import set_optimizer, save_model
 from networks.resnet_big import SupConResNet
@@ -66,8 +66,8 @@ def parse_option():
     parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop')
 
     # method
-    parser.add_argument('--method', type=str, default='SimCLR',
-                        choices=['SupCon', 'SimCLR', 'SimCLR2', 'SimCLR2+pos_app', 'SimCLR2+pos_all', 'essl', 'essl+pos_app'], help='choose method')
+    parser.add_argument('--method', type=str, default='simclr',
+                        choices=['simclr', 'essl', 'essl+diag', 'simclr+all'], help='choose method')
 
     # temperature
     parser.add_argument('--temp', type=float, default=0.07,
@@ -102,6 +102,14 @@ def parse_option():
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--resume_from', type=str, default=None)
 
+    parser.add_argument('--add_randomcrop', action='store_true', help='scale (0.9, 1), ratio (0.9, 1.1)')
+    parser.add_argument('--add_randomcrop2', action='store_true', help='scale (0.7, 1), ratio default')
+    parser.add_argument('--add_randomcrop3', action='store_true', help='scale (0.5, 1), ratio default')
+
+    parser.add_argument('--setting', type=str, default='default',
+        choices=['default', 'v1=v2=gan', 'v1=basic,v2=gan', 'v1=expert,v2=gan', 'v1=v2=basic,v3=gan', \
+            'v1=v2=gan+basic', 'v1=v2=basic+gan', 'v1=v2=basic', 'v3=basic,v1=v2=gan', 'v1=basic,v2=v3=gan'])
+
     opt = parser.parse_args()
     args = opt
 
@@ -111,11 +119,11 @@ def parse_option():
             and opt.mean is not None \
             and opt.std is not None  # NOTE: commented out since it's imagenet
     
-    if opt.append_view:
-        args.pos_view_paths = [s for s in args.pos_view_paths.split(',') if s != '']
-        print(f"pos_view_paths = {args.pos_view_paths}")
-        args.neg_view_paths = [s for s in args.neg_view_paths.split(',') if s != '']
-        print(f"neg_view_paths = {args.neg_view_paths}")
+    # if opt.append_view:
+    args.pos_view_paths = [s for s in args.pos_view_paths.split(',') if s != '']
+    print(f"pos_view_paths = {args.pos_view_paths}")
+    args.neg_view_paths = [s for s in args.neg_view_paths.split(',') if s != '']
+    print(f"neg_view_paths = {args.neg_view_paths}")
 
     # set the path according to the environment
     if opt.data_folder is None:
@@ -232,38 +240,106 @@ def set_loader(opt):
         transforms.ToTensor(),
         normalize,
     ])
+    basic_transform = transforms.Compose([
+        transforms.RandomResizedCrop(size=opt.size, scale=(0.2, 1.)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        normalize,
+    ])
+    if opt.add_randomcrop:
+        gan_transform = transforms.Compose([
+            transforms.RandomResizedCrop(size=opt.size, scale=(0.9, 1.), ratio=(0.9, 1.1)),
+            transforms.RandomHorizontalFlip(),
+            normalize,
+        ])
+    elif opt.add_randomcrop2:
+        gan_transform = transforms.Compose([
+            transforms.RandomResizedCrop(size=opt.size, scale=(0.7, 1.)),
+            transforms.RandomHorizontalFlip(),
+            normalize,
+        ])
+    elif opt.add_randomcrop3:
+        gan_transform = transforms.Compose([
+            transforms.RandomResizedCrop(size=opt.size, scale=(0.5, 1.)),
+            transforms.RandomHorizontalFlip(),
+            normalize,
+        ])
+    else:
+        gan_transform = transforms.Compose([
+            transforms.RandomHorizontalFlip(),
+            normalize,
+        ])
+
+    n_views_gan = 0
+    if opt.setting == 'default':
+        tt1 = TwoCropTransform(train_transform)
+        tt3 = None
+    elif opt.setting == 'v1=v2=gan':
+        tt1 = None
+        tt3 = gan_transform
+        n_views_gan = 2
+    elif opt.setting == 'v1=v2=basic':
+        tt1 = TwoCropTransform(basic_transform)
+        tt3 = None
+    elif opt.setting == 'v1=basic,v2=gan':
+        tt1 = TwoCropTransform1(basic_transform)
+        tt3 = gan_transform
+        n_views_gan = 1
+    elif opt.setting == 'v1=expert,v2=gan':
+        tt1 = TwoCropTransform1(train_transform)
+        tt3 = gan_transform
+        n_views_gan = 1
+    elif opt.setting == 'v1=v2=basic,v3=gan':
+        tt1 = TwoCropTransform(basic_transform)
+        tt3 = gan_transform
+        n_views_gan = 1
+    elif opt.setting == 'v3=basic,v1=v2=gan':
+        tt1 = TwoCropTransform1(basic_transform)
+        tt3 = gan_transform
+        n_views_gan = 2
+    elif opt.setting == 'v1=basic,v2=v3=gan':
+        tt1 = TwoCropTransform1(basic_transform)
+        tt3 = gan_transform
+        n_views_gan = 2
+    elif opt.setting == 'v1=v2=gan+basic':
+        tt1 = None
+        tt3 = transforms.Compose([
+            transforms.RandomResizedCrop(size=opt.size, scale=(0.2, 1.)),
+            transforms.RandomHorizontalFlip(),
+            normalize,
+        ])
+        n_views_gan = 2
+    else:
+        raise ValueError('setting not supported: {}'.format(opt.setting))
 
     if opt.dataset == 'cifar10':
         train_dataset = datasets.CIFAR10(root=opt.data_folder,
-                                         transform=TwoCropTransform(train_transform),
+                                         transform=tt1,
                                          download=True)
     elif opt.dataset == 'cifar100':
         train_dataset = datasets.CIFAR100(root=opt.data_folder,
-                                          transform=TwoCropTransform(train_transform),
+                                          transform=tt1,
                                           download=True)
     elif opt.dataset == 'path' or opt.dataset == 'imagenet':
         train_dataset = datasets.ImageFolder(root=os.path.join(opt.data_folder, 'train'),
-                                            transform=TwoCropTransform(train_transform))
+                                            transform=tt1)
     else:
         raise ValueError(opt.dataset)
-    
-    if opt.append_view:
-        from util_data import MultiViewDataset
-        transform3 = transforms.Compose([
-            transforms.RandomHorizontalFlip(),
-            normalize,
-        ])  # NOTE: hardcoded, also NO post-transform
-        train_dataset = MultiViewDataset(
-            orig_dataset=train_dataset,
-            pos_view_paths=opt.pos_view_paths,
-            neg_view_paths=opt.neg_view_paths,
-            transform3=transform3,
-            n_views=1,  # NOTE: hardcoded
-            train=True,
-            subset_index=np.arange(len(train_dataset)),  # TODO: hardcoded
-            sample_from_original=opt.sample_from_original,
-            uint8=opt.uint8,
-        )
+
+    from util_data import MultiViewDataset4
+    train_dataset = MultiViewDataset4(
+        orig_dataset=train_dataset,
+        pos_view_paths=opt.pos_view_paths,
+        neg_view_paths=opt.neg_view_paths,
+        transform1=tt1,
+        transform3=tt3,
+        n_views=n_views_gan,
+        train=True,
+        subset_index=np.arange(len(train_dataset)),  # TODO: hardcoded
+        sample_from_original=opt.sample_from_original,
+        uint8=opt.uint8,
+        setting=opt.setting,
+    )
 
     train_sampler = None
     train_loader = torch.utils.data.DataLoader(
@@ -319,28 +395,40 @@ def train(train_loader, model, criterion, optimizer, epoch, opt, file_to_update=
         else:
             features = model(images)  # NOTE: forward large batch including appended views
 
-        if opt.method in ['SupCon', 'SimCLR']:
-            f1, f2 = torch.split(features, [bsz, bsz], dim=0)
-            features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-        else:
-            feat_list = torch.split(features, bsz, dim=0)
-        if opt.method == 'SupCon':
-            loss = criterion(features, labels)
-        elif opt.method == 'SimCLR':
-            loss = criterion(features)
-        elif opt.method == 'SimCLR2':
+        feat_list = torch.split(features, bsz, dim=0)
+
+        if opt.setting == 'default':
             loss = simclr_loss(feat_list[0], feat_list[1], opt.temp)
-        elif opt.method == 'SimCLR2+pos_app':
-            loss = simclr_loss_pos_append(feat_list[0], feat_list[1], feat_list[2], opt.alpha, opt.temp)
-        elif opt.method == 'SimCLR2+pos_all':
-            loss = simclr_loss_pos_all(feat_list[0], feat_list[1], feat_list[2], opt.temp)
-        elif opt.method == 'essl':
-            loss = essl_loss(feat_list[0], feat_list[1], opt.temp)
-        elif opt.method == 'essl+pos_app':
+        elif opt.setting == 'v1=v2=gan':
+            loss = simclr_loss(feat_list[0], feat_list[1], opt.temp)
+        elif opt.setting == 'v1=v2=basic':
+            loss = simclr_loss(feat_list[0], feat_list[1], opt.temp)
+        elif opt.setting == 'v1=basic,v2=gan':
+            loss = simclr_loss(feat_list[0], feat_list[1], opt.temp)
+        elif opt.setting == 'v1=expert,v2=gan':
+            loss = simclr_loss(feat_list[0], feat_list[1], opt.temp)
+        elif opt.setting == 'v1=v2=basic,v3=gan':
+            if opt.method == 'essl+diag':
+                loss = essl_loss_pos_append(feat_list[0], feat_list[1], feat_list[2], opt.alpha, opt.temp)
+            elif opt.method == 'simclr+diag':
+                loss = simclr_loss_pos_append(feat_list[0], feat_list[1], feat_list[2], opt.alpha, opt.temp)
+            elif opt.method == 'simclr+all':
+                loss = simclr_loss_pos_all(feat_list[0], feat_list[1], feat_list[2], opt.temp)
+            else:
+                raise ValueError('method not supported: {}'.format(opt.method))
+        elif opt.setting == 'v3=basic,v1=v2=gan':
+            if opt.method == 'essl+diag':
+                loss = essl_loss_pos_append(feat_list[1], feat_list[2], feat_list[0], opt.alpha, opt.temp)
+            elif opt.method == 'simclr+all':
+                loss = simclr_loss_pos_all(feat_list[1], feat_list[2], feat_list[0], opt.temp)
+            else:
+                raise ValueError('method not supported: {}'.format(opt.method))
+        elif opt.setting == 'v1=basic,v2=v3=gan':
             loss = essl_loss_pos_append(feat_list[0], feat_list[1], feat_list[2], opt.alpha, opt.temp)
+        elif opt.setting == 'v1=v2=gan+basic':
+            loss = simclr_loss(feat_list[0], feat_list[1], opt.temp)
         else:
-            raise ValueError('contrastive method not supported: {}'.
-                             format(opt.method))
+            raise ValueError('setting not supported: {}'.format(opt.setting))
 
         # update metric
         losses.update(loss.item(), bsz)
@@ -376,6 +464,7 @@ def main():
     opt = parse_option()
 
     # set random seed
+
     # if not opt.no_seed:
     #     from util import fix_seed
     #     fix_seed(opt.seed)

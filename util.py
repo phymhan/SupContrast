@@ -32,6 +32,32 @@ class TwoCropTransform:
     def __call__(self, x):
         return [self.transform(x), self.transform(x)]
 
+class TwoCropTransform1:
+    """Create two crops of the same image"""
+    def __init__(self, transform1):
+        self.transform1 = transform1
+
+    def __call__(self, x):
+        return [self.transform1(x)]
+
+class TwoCropTransform2:
+    """Create two crops of the same image"""
+    def __init__(self, transform1, transform2):
+        self.transform1 = transform1
+        self.transform2 = transform2
+
+    def __call__(self, x):
+        return [self.transform1(x), self.transform2(x)]
+
+class TwoCropTransform3:
+    """Create two crops of the same image"""
+    def __init__(self, transform1, transform2, transform3):
+        self.transform1 = transform1
+        self.transform2 = transform2
+        self.transform3 = transform3
+
+    def __call__(self, x):
+        return [self.transform1(x), self.transform2(x), self.transform3(x)]
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -240,7 +266,7 @@ def setup_wandb_run_id(log_dir, resume=False):
             f.write(run_id + '\n')
     return run_id
 
-def setup_wandb(args, project=None, name=None, save_to_log_dir=False):
+def setup_wandb(args, project=None, name=None, save_to_log_dir=False, resume=False):
     if wandb is not None:
         name = name or get_name_from_args(args)
         resume = getattr(args, 'resume', False)
@@ -288,3 +314,13 @@ class logging_file(object):
 
     def __del__(self):
         pass
+
+def get_last_checkpoint(ckpt_dir, ckpt_ext='.pt', latest=None):
+    assert ckpt_ext.startswith('.')
+    if latest is None:
+        ckpt_path = sorted(glob(os.path.join(ckpt_dir, '*'+ckpt_ext)), key=os.path.getmtime, reverse=True)[0]
+    else:
+        if not latest.endswith(ckpt_ext):
+            latest += ckpt_ext
+        ckpt_path = Path(ckpt_dir) / latest
+    return ckpt_path
