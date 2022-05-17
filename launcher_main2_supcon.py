@@ -218,7 +218,9 @@ def main():
 
     executor.update_parameters(
         mem_gb=0,
-        # gpus_per_node=num_gpus_per_node,
+        gpus_per_node=num_gpus_per_node,
+        tasks_per_node=num_gpus_per_node,  # one task per GPU
+        # nodes=nodes,
         slurm_cpus_per_gpu=24,
         # cpus_per_task=24,
         # nodes=nodes,
