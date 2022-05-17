@@ -48,8 +48,8 @@ parser.add_argument('--data_folder', type=str, default=None, help='path to custo
 parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop')
 
 # method
-parser.add_argument('--method', type=str, default='simclr',
-                    choices=['simclr', 'essl', 'essl+diag', 'simclr+all'], help='choose method')
+parser.add_argument('--method', type=str, default='SimCLR',
+                    choices=['SupCon', 'SimCLR', 'SimCLR2', 'SimCLR2+pos_app', 'SimCLR2+pos_all', 'essl', 'essl+pos_app'], help='choose method')
 
 # temperature
 parser.add_argument('--temp', type=float, default=0.07,
@@ -83,14 +83,6 @@ parser.add_argument('--alpha', type=float, default=0.5,
 parser.add_argument('--uint8', action='store_true')
 parser.add_argument('--resume', action='store_true')
 parser.add_argument('--resume_from', type=str, default=None)
-
-parser.add_argument('--add_randomcrop', action='store_true', help='scale (0.9, 1), ratio (0.9, 1.1)')
-parser.add_argument('--add_randomcrop2', action='store_true', help='scale (0.7, 1), ratio default')
-parser.add_argument('--add_randomcrop3', action='store_true', help='scale (0.5, 1), ratio default')
-
-parser.add_argument('--setting', type=str, default='default',
-    choices=['default', 'v1=v2=gan', 'v1=basic,v2=gan', 'v1=expert,v2=gan', 'v1=v2=basic,v3=gan', \
-        'v1=v2=gan+basic', 'v1=v2=basic+gan', 'v1=v2=basic', 'v3=basic,v1=v2=gan', 'v1=basic,v2=v3=gan'])
 
 # Slurm setting
 parser.add_argument('--ngpus-per-node', default=6, type=int, metavar='N',
