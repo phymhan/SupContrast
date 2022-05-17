@@ -222,7 +222,7 @@ def main():
         gpus_per_node=num_gpus_per_node,
         cpus_per_gpu=24,
         # cpus_per_task=24,
-        nodes=nodes,
+        # nodes=nodes,
         timeout_min=timeout_min,  # max is 60 * 6
         # Below are cluster dependent parameters
         slurm_partition=partition,
