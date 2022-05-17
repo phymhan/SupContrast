@@ -119,7 +119,7 @@ class Trainer(object):
         import os
         import submitit
 
-        self.args.dist_url = get_init_file(self.args).as_uri()
+        # self.args.dist_url = get_init_file(self.args).as_uri()
         ckpt_path = get_last_checkpoint(
             ckpt_dir=os.path.join(self.args.log_dir, 'weights'),
             ckpt_ext='.pth',
@@ -204,7 +204,7 @@ def main():
     # args.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     # args.log_dir.mkdir(parents=True, exist_ok=True)
 
-    get_init_file(args)
+    # get_init_file(args)
 
     # Note that the folder will depend on the job_id, to easily track experiments
     executor = submitit.AutoExecutor(folder=args.job_dir, slurm_max_num_timeout=30)
