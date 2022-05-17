@@ -15,6 +15,8 @@ st = pdb.set_trace
 
 import random
 
+from torch.utils.tensorboard import SummaryWriter
+
 def fix_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -286,11 +288,10 @@ def setup_wandb(args, project=None, name=None, save_to_log_dir=False, resume=Fal
             save_code=True,
             dir=wandb_log_dir,
         )
-        return run
     else:
-        log_str = "Failed to set up wandb - aborting"
-        log(log_str, level="error")
-        raise RuntimeError(log_str)
+        run = SummaryWriter(args.log_dir / 'tb_logs')
+    
+    return run
 
 
 class logging_file(object):
