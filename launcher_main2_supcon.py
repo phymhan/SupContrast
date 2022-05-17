@@ -169,6 +169,7 @@ def main():
 
     # log_dir
     opt.log_dir = Path(opt.log_dir)
+    opt.job_dir = opt.log_dir
     opt.use_wandb = not opt.no_wandb
     if opt.cuda is not None:
         os.environ['CUDA_VISIBLE_DEVICES'] = opt.cuda
