@@ -231,7 +231,7 @@ def main():
 
     # executor.update_parameters(name=args.exp)
 
-    args.dist_url = get_init_file(args).as_uri()
+    # args.dist_url = get_init_file(args).as_uri()
 
     trainer = Trainer(args)
     job = executor.submit(trainer)
