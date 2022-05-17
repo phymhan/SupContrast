@@ -220,11 +220,9 @@ def main():
     executor.update_parameters(
         mem_gb=0,
         gpus_per_node=num_gpus_per_node,
-        tasks_per_node=num_gpus_per_node,  # one task per GPU
-        # nodes=nodes,
-        slurm_cpus_per_gpu=24,
-        # cpus_per_task=24,
-        # nodes=nodes,
+        tasks_per_node=1,  # one task per GPU
+        cpus_per_task=24,
+        nodes=nodes,
         timeout_min=timeout_min,  # max is 60 * 6
         # Below are cluster dependent parameters
         slurm_partition=partition,
@@ -239,7 +237,7 @@ def main():
     trainer = Trainer(args)
     job = executor.submit(trainer)
 
-    _logger.info("Submitted job_id:", job.job_id)
+    _logger.info(f"Submitted job_id: {job.job_id}")
 
 
 if __name__ == '__main__':
