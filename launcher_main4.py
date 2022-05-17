@@ -220,7 +220,7 @@ def main():
     executor.update_parameters(
         mem_gb=0,
         # gpus_per_node=num_gpus_per_node,
-        cpus_per_gpu=24,
+        slurm_cpus_per_gpu=24,
         # cpus_per_task=24,
         # nodes=nodes,
         timeout_min=timeout_min,  # max is 60 * 6
