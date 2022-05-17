@@ -269,27 +269,8 @@ def setup_wandb_run_id(log_dir, resume=False):
     return run_id
 
 def setup_wandb(args, project=None, name=None, save_to_log_dir=False, resume=False):
-    if wandb is not None:
-        name = name or get_name_from_args(args)
-        resume = getattr(args, 'resume', False)
-        run_id = setup_wandb_run_id(args.log_dir, resume)
-        args.wandb_run_id = run_id
-        if save_to_log_dir:
-            wandb_log_dir = Path(args.log_dir) / 'wandb'
-            os.makedirs(wandb_log_dir, exist_ok=True)
-        else:
-            wandb_log_dir = None
-        run = wandb.init(
-            project=project or getattr(args, 'wandb_project', 'unknown'),
-            name=name,
-            id=run_id,
-            config=args,
-            resume=True if resume else "allow",
-            save_code=True,
-            dir=wandb_log_dir,
-        )
-    else:
-        run = SummaryWriter(args.log_dir / 'tb_logs')
+
+    run = SummaryWriter(args.log_dir / 'tb_logs')
     
     return run
 
