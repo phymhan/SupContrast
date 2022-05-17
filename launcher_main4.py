@@ -218,7 +218,7 @@ def main():
     kwargs = {'slurm_gres': f'gpu:{num_gpus_per_node}',}
 
     executor.update_parameters(
-        mem_gb=30 * num_gpus_per_node,
+        mem_gb=0,
         # gpus_per_node=num_gpus_per_node,
         cpus_per_gpu=24,
         # cpus_per_task=24,
