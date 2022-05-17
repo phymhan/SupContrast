@@ -14,7 +14,7 @@ ulimit -s unlimited
 python $HOME2/scratch/SupContrast-Ligong/launcher_main4.py \
     --batch_size 512 --epochs 1000 --size 64 \
     --wandb_project simclr-t64 \
-    --dataset path --data_folder "/gpfs/u/home/BNSS/BNSSsgwh/scratch/data/tiny-imagenet-200" \
+    --dataset path --data_folder "/gpfs/u/home/BNSS/BNSSsgwh/scratch/data/tiny-imagenet-200-1" \
     --mean "(0.480, 0.448, 0.398)" \
     --std "(0.277, 0.269, 0.282)" \
     --log_dir ./logs/0515_main-t64_VG4+A1_crop=small \
