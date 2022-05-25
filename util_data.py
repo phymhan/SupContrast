@@ -206,12 +206,18 @@ class MultiViewDataset4(torch.utils.data.Dataset):
             return images, labels
         elif self.setting == 'v1=v2=gan':
             images = []
+        elif self.setting == 'v1=v2=v3=gan':
+            images = []
         elif self.setting == 'v1=v2=basic':
             return images, labels
         elif self.setting == 'v1=basic,v2=gan':
             assert len(images) == 1
         elif self.setting == 'v1=expert,v2=gan':
             assert len(images) == 1
+        elif self.setting == 'v1=v2=v3=expert':
+            assert len(images) == 3
+        elif self.setting == 'v1=v2=v3=basic':
+            assert len(images) == 3
         elif self.setting == 'v1=v2=basic,v3=gan':
             assert len(images) == 2
         elif self.setting == 'v3=basic,v1=v2=gan':

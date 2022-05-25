@@ -108,7 +108,8 @@ def parse_option():
 
     parser.add_argument('--setting', type=str, default='default',
         choices=['default', 'v1=v2=gan', 'v1=basic,v2=gan', 'v1=expert,v2=gan', 'v1=v2=basic,v3=gan', \
-            'v1=v2=gan+basic', 'v1=v2=basic+gan', 'v1=v2=basic', 'v3=basic,v1=v2=gan', 'v1=basic,v2=v3=gan'])
+            'v1=v2=gan+basic', 'v1=v2=basic+gan', 'v1=v2=basic', 'v3=basic,v1=v2=gan', 'v1=basic,v2=v3=gan',
+            'v1=v2=v3=expert', 'v1=v2=v3=basic', 'v1=v2=v3=gan'])
 
     opt = parser.parse_args()
     args = opt
@@ -289,6 +290,24 @@ def set_loader(opt):
         tt1 = TwoCropTransform1(train_transform)
         tt3 = gan_transform
         n_views_gan = 1
+    elif opt.setting == 'v1=v2=v3=expert':
+        from util import ThreeCropTransform
+        # tt1 = TwoCropTransform3(train_transform,train_transform,train_transform)
+        tt1 = ThreeCropTransform(train_transform)
+        tt3 = None
+        n_views_gan = 0
+    elif opt.setting == 'v1=v2=v3=basic':
+        from util import ThreeCropTransform
+        # tt1 = TwoCropTransform3(train_transform,train_transform,train_transform)
+        tt1 = ThreeCropTransform(basic_transform)
+        tt3 = None
+        n_views_gan = 0
+    elif opt.setting == 'v1=v2=v3=gan':
+        from util import ThreeCropTransform
+        # tt1 = TwoCropTransform3(train_transform,train_transform,train_transform)
+        tt1 = None
+        tt3 = gan_transform
+        n_views_gan = 3
     elif opt.setting == 'v1=v2=basic,v3=gan':
         tt1 = TwoCropTransform(basic_transform)
         tt3 = gan_transform
@@ -407,6 +426,13 @@ def train(train_loader, model, criterion, optimizer, epoch, opt, file_to_update=
             loss = simclr_loss(feat_list[0], feat_list[1], opt.temp)
         elif opt.setting == 'v1=expert,v2=gan':
             loss = simclr_loss(feat_list[0], feat_list[1], opt.temp)
+        elif opt.setting == 'v1=v2=v3=expert' or opt.setting == 'v1=v2=v3=basic' or opt.setting == 'v1=v2=v3=gan':
+            if opt.method == 'essl+diag':
+                loss = essl_loss_pos_append(feat_list[0], feat_list[1], feat_list[2], opt.alpha, opt.temp)
+            elif opt.method == 'simclr+all':
+                loss = simclr_loss_pos_all(feat_list[0], feat_list[1], feat_list[2], opt.temp)
+            else:
+                raise ValueError('method not supported: {}'.format(opt.method))
         elif opt.setting == 'v1=v2=basic,v3=gan':
             if opt.method == 'essl+diag':
                 loss = essl_loss_pos_append(feat_list[0], feat_list[1], feat_list[2], opt.alpha, opt.temp)

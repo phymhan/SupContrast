@@ -65,6 +65,7 @@ def parse_option():
 
     parser.add_argument('--ckpt', type=str, default='',
                         help='path to pre-trained model')
+    parser.add_argument('--seed', type=int, default=0)
 
     opt = parser.parse_args()
 
@@ -235,6 +236,10 @@ def validate(val_loader, model, classifier, criterion, opt):
 def main():
     best_acc = 0
     opt = parse_option()
+
+    if True:  #not opt.no_seed:
+        from util import fix_seed
+        fix_seed(opt.seed)
 
     # build data loader
     train_loader, val_loader = set_loader(opt)
